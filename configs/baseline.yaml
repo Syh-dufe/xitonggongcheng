@@ -1,0 +1,5 @@
+periods_per_day: 48
+behavior:
+  bias_strength: 1.0
+  temperature: 1.0
+  hidden_confounding_strength: 0.0

@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "prescriptive-capacity-sim"
+version = "0.1.0"
+description = "Simulation environment for causal prescriptive capacity scheduling"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=2.0",
+  "pandas>=2.2",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+capacity-sim = "prescriptive_capacity_sim.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/prescriptive_capacity_sim"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+
