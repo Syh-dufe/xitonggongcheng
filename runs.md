@@ -6,6 +6,7 @@
 |---|---|---|---|---:|---|---|---|---|---|---|---|
 | 2026-09-19 | 默认环境能生成有重叠的四行动历史日志 | `uv run python -m prescriptive_capacity_sim.cli generate --config configs/baseline.yaml --days 30 --seed 20260919 --output outputs/final_baseline` | 未提交（本机未配置Git身份） | 20260919 | `configs/baseline.yaml` | simulator 0.1.0 | 行动覆盖、泄漏、Oracle一致性 | 1,440行；四行动均出现；Oracle不一致0；泄漏列0 | 2.576秒 | exploratory | 21个训练episode、9个测试episode；最小已选行动概率0.008988 |
 | 2026-09-19 | 复合冲击应激活积压与安全指标 | `uv run python -m prescriptive_capacity_sim.cli benchmark --config configs/shock_compound.yaml --days 30 --seed 20260919 --output outputs/final_shock` | 未提交（本机未配置Git身份） | 20260919 | `configs/shock_compound.yaml` | simulator 0.1.0 | 总成本、服务率、积压、安全违反率 | 历史策略安全违反率0.05347；固定零增援0.08403；滚动Oracle经验成本最低 | 2.507秒 | exploratory | 仅用于环境健全性检查，不支持算法优越性主张 |
+| 2026-09-20 | 真实到达校准的反事实分支应可完全复现 | 7日内存重放（1999-10-21至1999-10-27） | `codex/real-callcenter-simulator` | 20260920 | `configs/callcenter_baseline.yaml` | Technion/University of Bern 1999镜像 | 行数、逐字节复现、流量指标 | 事实336行、Oracle 2,352行；两次运行CSV SHA-256完全一致 | 7.8秒（含全年读取与校准） | smoke | facts `e9c128...a65`；oracle `fd2743...6c1`；仅作软件健全性检查 |
 
 ## 确认性实验冻结项
 

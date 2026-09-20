@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Sequence
 
 import numpy as np
@@ -19,6 +19,13 @@ class EmpiricalCalibration:
     pooled_service_seconds: np.ndarray
     patience_support_seconds: np.ndarray
     patience_survival: np.ndarray
+    _patience_cdf: np.ndarray = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        cdf = 1.0 - np.asarray(self.patience_survival, dtype=float)
+        if len(cdf) == 0 or cdf[-1] <= 0:
+            raise ValueError("patience curve must contain positive event mass")
+        object.__setattr__(self, "_patience_cdf", cdf)
 
     def sample_service(self, call_type: str, rng: np.random.Generator) -> float:
         values = self.service_seconds_by_type.get(
@@ -30,10 +37,9 @@ class EmpiricalCalibration:
         # Kaplan-Meier probability masses are the drops in survival. If the
         # right tail is censored, condition on an observed finite event so the
         # discrete-event simulation remains bounded.
-        prior = np.concatenate(([1.0], self.patience_survival[:-1]))
-        masses = prior - self.patience_survival
-        masses = masses / masses.sum()
-        return float(rng.choice(self.patience_support_seconds, p=masses))
+        draw = rng.random() * self._patience_cdf[-1]
+        index = int(np.searchsorted(self._patience_cdf, draw, side="left"))
+        return float(self.patience_support_seconds[index])
 
 
 def fit_empirical_calibration(

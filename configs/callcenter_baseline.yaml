@@ -1,5 +1,6 @@
 included_types:
   - PS
+  - PE
   - NE
   - NW
   - TT

@@ -237,19 +237,19 @@ Commit message: `feat: add real call center simulation workflow`
 - Create: `docs/callcenter-data-and-simulator.md`
 - Modify: `runs.md`
 
-- [ ] **Step 1: Run the full-year data audit**
+- [x] **Step 1: Run the full-year data audit**
 
 Run the loader against `C:\Users\13384\Desktop\系统\data\raw\technion_anonymous_bank\extracted` and record total raw rows, included queue calls, exclusions by reason, dates, call types, service duration summaries, and abandonment summaries.
 
-- [ ] **Step 2: Run a deterministic smoke simulation**
+- [x] **Step 2: Run a deterministic smoke simulation**
 
 Generate at least seven replay days under the baseline staffing action set. Re-run with the same seed and verify byte-identical factual and oracle CSV outputs.
 
-- [ ] **Step 3: Document provenance and limitations**
+- [x] **Step 3: Document provenance and limitations**
 
 Explain that real logs calibrate arrivals, service, and patience; staffing actions and counterfactuals are semi-synthetic; busy-agent observations are not treated as full historical staffing; and raw identifiers must not be committed.
 
-- [ ] **Step 4: Run all verification**
+- [x] **Step 4: Run all verification**
 
 Run: `uv run pytest -q`
 
@@ -257,7 +257,7 @@ Run: `git status --short`
 
 Expected: tests pass; no raw data or generated outputs are tracked.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit message: `docs: document calibrated call center simulator`
 
