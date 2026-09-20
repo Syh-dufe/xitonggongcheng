@@ -168,27 +168,27 @@ Commit message: `feat: add cloneable call center event simulator`
 - Create: `src/prescriptive_capacity_sim/callcenter_scenarios.py`
 - Create: `tests/test_callcenter_scenarios.py`
 
-- [ ] **Step 1: Write failing scenario tests**
+- [x] **Step 1: Write failing scenario tests**
 
 Test that a real day is converted into 30-minute call primitives, the same seed produces identical service and patience draws, the behavior policy exposes positive propensity for every staffing action, and the oracle branches all actions from identical pre-decision state and exogenous calls.
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `uv run pytest tests/test_callcenter_scenarios.py -q`
 
 Expected: import failure because `callcenter_scenarios.py` does not exist.
 
-- [ ] **Step 3: Implement replay and branching**
+- [x] **Step 3: Implement replay and branching**
 
 Implement `build_replay_day()`, a softmax `StaffingBehaviorPolicy`, and `generate_semisynthetic_day()`. The observed row contains only the selected action and realized result. The oracle row contains potential cost and service outcomes for every action but is returned separately. Cost combines staffing minutes, waiting seconds, abandonment, SLA violations, and terminal queue using an explicit configuration object.
 
-- [ ] **Step 4: Run scenario tests**
+- [x] **Step 4: Run scenario tests**
 
 Run: `uv run pytest tests/test_callcenter_scenarios.py -q`
 
 Expected: all scenario tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit message: `feat: generate factual and counterfactual staffing logs`
 
