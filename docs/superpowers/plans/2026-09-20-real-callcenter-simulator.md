@@ -63,17 +63,17 @@ Commit message: `feat: parse anonymous bank call logs safely`
 - Create: `src/prescriptive_capacity_sim/calibration.py`
 - Create: `tests/test_calibration.py`
 
-- [ ] **Step 1: Write failing calibration tests**
+- [x] **Step 1: Write failing calibration tests**
 
 Test that service sampling is stratified by call type with a pooled fallback, that identical seeds reproduce samples, and that the Kaplan-Meier patience estimator treats answered calls as right-censored and abandoned calls as observed events.
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `uv run pytest tests/test_calibration.py -q`
 
 Expected: import failure because `calibration.py` does not exist.
 
-- [ ] **Step 3: Implement the empirical models**
+- [x] **Step 3: Implement the empirical models**
 
 Implement:
 
@@ -93,13 +93,13 @@ def fit_empirical_calibration(calls: Sequence[QueueCall]) -> EmpiricalCalibratio
 
 Use only positive answered-call service durations. Build a Kaplan-Meier survival curve from queue waits, marking `HANG` as an event and `AGENT` as right-censored. Sampling must be deterministic under a fixed NumPy generator.
 
-- [ ] **Step 4: Run calibration tests**
+- [x] **Step 4: Run calibration tests**
 
 Run: `uv run pytest tests/test_calibration.py -q`
 
 Expected: all calibration tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit message: `feat: calibrate empirical call primitives`
 
