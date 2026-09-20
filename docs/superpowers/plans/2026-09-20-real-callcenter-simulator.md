@@ -200,17 +200,17 @@ Commit message: `feat: generate factual and counterfactual staffing logs`
 - Create: `tests/test_callcenter_cli.py`
 - Modify: `pyproject.toml`
 
-- [ ] **Step 1: Write a failing CLI test**
+- [x] **Step 1: Write a failing CLI test**
 
 Run the CLI against a temporary two-day fixture and assert creation of `calibration_summary.json`, `observed_log.csv`, `oracle_counterfactuals.csv`, `daily_metrics.csv`, and `run_manifest.json`. Assert the observed log has no customer/server identifiers and no potential-outcome columns.
 
-- [ ] **Step 2: Verify the CLI test fails**
+- [x] **Step 2: Verify the CLI test fails**
 
 Run: `uv run pytest tests/test_callcenter_cli.py -q`
 
 Expected: the `callcenter-generate` subcommand is missing.
 
-- [ ] **Step 3: Implement the command**
+- [x] **Step 3: Implement the command**
 
 Add:
 
@@ -220,13 +220,13 @@ capacity-sim callcenter-generate --data-dir PATH --config configs/callcenter_bas
 
 The command validates twelve monthly files when running the full dataset, records data paths and hashes in the manifest, splits days chronologically into calibration/validation/test partitions, and never writes raw identifiers.
 
-- [ ] **Step 4: Run CLI and full tests**
+- [x] **Step 4: Run CLI and full tests**
 
 Run: `uv run pytest -q`
 
 Expected: all legacy and new tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit message: `feat: add real call center simulation workflow`
 
