@@ -109,17 +109,17 @@ Commit message: `feat: calibrate empirical call primitives`
 - Create: `src/prescriptive_capacity_sim/callcenter_simulator.py`
 - Create: `tests/test_callcenter_simulator.py`
 
-- [ ] **Step 1: Write failing event-engine tests**
+- [x] **Step 1: Write failing event-engine tests**
 
 Cover immediate service, FIFO ordering, high-priority ordering, abandonment at the patience deadline, service completion across interval boundaries, flow conservation, deterministic replay, and weak monotonicity of abandonment under higher staffing for identical call primitives.
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `uv run pytest tests/test_callcenter_simulator.py -q`
 
 Expected: import failure because `callcenter_simulator.py` does not exist.
 
-- [ ] **Step 3: Implement the event engine**
+- [x] **Step 3: Implement the event engine**
 
 Implement immutable call primitives and cloneable mutable state:
 
@@ -152,13 +152,13 @@ def simulate_interval(
 
 Process arrivals, service completions, abandonments, and interval end in chronological order. Calls already in service finish after staffing reductions; new service begins only when busy calls are below the requested staffing. Return arrivals, started service, completed service, abandoned, waiting-time summaries, service level, ending queue, busy seconds, staffed seconds, and a cloned next state.
 
-- [ ] **Step 4: Run event-engine tests**
+- [x] **Step 4: Run event-engine tests**
 
 Run: `uv run pytest tests/test_callcenter_simulator.py -q`
 
 Expected: all event-engine tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit message: `feat: add cloneable call center event simulator`
 
