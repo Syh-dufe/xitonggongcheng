@@ -265,11 +265,11 @@ Commit message: `docs: document calibrated call center simulator`
 
 **Files:** none
 
-- [ ] **Step 1: Add the new GitHub repository as a dedicated remote**
+- [x] **Step 1: Add the new GitHub repository as a dedicated remote**
 
 Use remote name `xitonggongcheng` and URL `https://github.com/Syh-dufe/xitonggongcheng.git` without changing the existing origin.
 
-- [ ] **Step 2: Verify the destination and branch**
+- [x] **Step 2: Verify the destination and branch**
 
 Run `git remote -v`, `git status --short --branch`, and the complete test suite.
 
