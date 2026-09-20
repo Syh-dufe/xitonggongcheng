@@ -16,17 +16,17 @@
 - Create: `src/prescriptive_capacity_sim/callcenter_data.py`
 - Create: `tests/test_callcenter_data.py`
 
-- [ ] **Step 1: Write failing parser tests**
+- [x] **Step 1: Write failing parser tests**
 
 Create a temporary mirror-format file whose header has 18 fields while data rows contain a leading row number plus the 18 documented fields. Assert that `load_callcenter_month()` returns typed timestamps, excludes `customer_id` and `server`, removes `PHANTOM`, excludes pre-queue abandonment, and retains queued `AGENT` and `HANG` calls.
 
-- [ ] **Step 2: Run the parser tests and verify failure**
+- [x] **Step 2: Run the parser tests and verify failure**
 
 Run: `uv run pytest tests/test_callcenter_data.py -q`
 
 Expected: import failure because `callcenter_data.py` does not exist.
 
-- [ ] **Step 3: Implement the minimal parser**
+- [x] **Step 3: Implement the minimal parser**
 
 Implement:
 
@@ -47,13 +47,13 @@ def load_callcenter_month(path: Path, included_types: set[str] | None = None) ->
 
 Accept the mirror's leading row index and verify all documented columns. Use `q_start` for queued calls; for direct-to-agent calls whose `q_start` is `00:00:00`, use `vru_exit` (falling back to `ser_start`) as the queue-entry timestamp and record zero waiting. Reject malformed dates or negative durations with a clear `ValueError`.
 
-- [ ] **Step 4: Run parser tests**
+- [x] **Step 4: Run parser tests**
 
 Run: `uv run pytest tests/test_callcenter_data.py -q`
 
 Expected: all parser tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit message: `feat: parse anonymous bank call logs safely`
 
