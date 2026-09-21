@@ -11,7 +11,7 @@ def test_parser_maps_three_classes():
     assert set(frame["service_class"]) == {
         "regular", "specialist", "callback_special"
     }
-    assert quality.total_rows == 6
+    assert quality.total_rows == 7
     assert quality.unknown_type_rows == 1
     assert quality.phantom_rows == 1
     assert quality.prequeue_exit_rows == 1
@@ -31,5 +31,14 @@ def test_directory_loader_is_deterministic():
 
 def test_service_and_patience_samples_are_identified():
     frame, _ = load_month(FIXTURE_DIR / "calls_sample.txt")
-    assert frame.loc[frame["outcome"] == "AGENT", "service_seconds"].tolist() == [120, 240]
+    assert frame.loc[frame["outcome"] == "AGENT", "service_seconds"].tolist() == [120, 240, 180]
     assert frame.loc[frame["outcome"] == "HANG", "patience_seconds"].tolist() == [60]
+
+
+def test_direct_service_without_queue_is_retained():
+    frame, _ = load_month(FIXTURE_DIR / "calls_sample.txt")
+    direct = frame.loc[
+        frame["outcome"].eq("AGENT") & frame["queue_seconds"].eq(0)
+    ]
+    assert len(direct) == 1
+    assert direct.iloc[0]["service_seconds"] == 180

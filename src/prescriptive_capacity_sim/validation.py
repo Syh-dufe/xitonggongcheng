@@ -19,7 +19,9 @@ def compare_real_and_simulated(
     rows: list[dict] = []
     for service_class in SERVICE_CLASSES:
         real = real_intervals.loc[real_intervals["service_class"].eq(service_class)]
-        real_arrivals = real["arrivals"].to_numpy(dtype=float)
+        real_arrivals = _complete_real_arrivals(
+            real_intervals, service_class, int(parameters.get("periods_per_day", 48))
+        )
         simulated_arrivals = simulated_log[f"arrival_{service_class}"].to_numpy(dtype=float)
         _append(rows, "arrival_mae", service_class,
                 float(np.mean(real_arrivals)) if len(real_arrivals) else 0.0,
@@ -54,11 +56,39 @@ def compare_real_and_simulated(
             "simulated": float(np.mean(simulated_service)),
             "error": distance,
         })
-        real_wait = float(real["mean_queue_seconds"].mean() / 60.0) if len(real) else 0.0
-        sim_wait = float(simulated_log["mean_wait_minutes"].mean())
+        if real_calls is not None and "queue_seconds" in real_calls:
+            real_wait_values = real_calls.loc[
+                real_calls["service_class"].eq(service_class), "queue_seconds"
+            ].to_numpy(dtype=float)
+            real_wait = float(np.mean(real_wait_values) / 60.0) if len(real_wait_values) else 0.0
+        else:
+            real_wait = float(real["mean_queue_seconds"].mean() / 60.0) if len(real) else 0.0
+        class_wait_column = f"mean_wait_{service_class}"
+        sim_wait = float(simulated_log[
+            class_wait_column if class_wait_column in simulated_log else "mean_wait_minutes"
+        ].mean())
         _append(rows, "mean_wait_relative_error", service_class, real_wait, sim_wait,
                 relative=True)
     return pd.DataFrame(rows)
+
+
+def _complete_real_arrivals(
+    intervals: pd.DataFrame,
+    service_class: str,
+    periods_per_day: int,
+) -> np.ndarray:
+    if {"call_date", "period"}.issubset(intervals.columns):
+        dates = pd.Index(intervals["call_date"].drop_duplicates())
+        index = pd.MultiIndex.from_product(
+            [dates, range(periods_per_day)], names=["call_date", "period"]
+        )
+        values = intervals.loc[
+            intervals["service_class"].eq(service_class)
+        ].groupby(["call_date", "period"], observed=True)["arrivals"].sum()
+        return values.reindex(index, fill_value=0).to_numpy(dtype=float)
+    return intervals.loc[
+        intervals["service_class"].eq(service_class), "arrivals"
+    ].to_numpy(dtype=float)
 
 
 def _append(

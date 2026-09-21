@@ -15,6 +15,7 @@ class QueuedCall:
     service_minutes: float
     patience_periods: int
     waited_periods: int = 0
+    intraperiod_wait_minutes: float = 0.0
 
     def waited_one_period(self) -> "QueuedCall":
         return replace(self, waited_periods=self.waited_periods + 1)
@@ -96,5 +97,6 @@ class PeriodResult:
     total_cost: float
     service_level: float
     mean_wait_minutes: float
+    mean_wait_by_class: tuple[float, float, float]
     p95_wait_minutes: float
     safety_violation: bool

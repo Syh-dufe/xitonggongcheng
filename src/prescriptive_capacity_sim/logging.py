@@ -145,6 +145,9 @@ def _observed_row(
         "total_cost": result.total_cost,
         "service_level": result.service_level,
         "mean_wait_minutes": result.mean_wait_minutes,
+        "mean_wait_regular": result.mean_wait_by_class[0],
+        "mean_wait_specialist": result.mean_wait_by_class[1],
+        "mean_wait_callback_special": result.mean_wait_by_class[2],
         "p95_wait_minutes": result.p95_wait_minutes,
         "safety_violation": result.safety_violation,
     }

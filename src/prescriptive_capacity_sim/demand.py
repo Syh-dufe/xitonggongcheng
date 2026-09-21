@@ -74,6 +74,12 @@ class CalibratedDemandProcess:
             patience_grid = np.asarray(
                 self.parameters["empirical"]["patience_seconds"][service_class], dtype=float
             )
+            queue_grid = np.asarray(
+                self.parameters["empirical"].get("queue_seconds", {}).get(
+                    service_class, [0.0]
+                ),
+                dtype=float,
+            )
             if service_grid.size == 0 or patience_grid.size == 0:
                 raise ValueError(f"empty empirical distribution for {service_class}")
             for _ in range(count):
@@ -87,6 +93,7 @@ class CalibratedDemandProcess:
                     priority=bool(rng.random() < priority_rate),
                     service_minutes=service_minutes,
                     patience_periods=patience_periods,
+                    intraperiod_wait_minutes=max(float(rng.choice(queue_grid)) / 60.0, 0.0),
                 ))
         transition = np.asarray(
             self.parameters["disruption"]["transition_matrix"][state.demand_state],

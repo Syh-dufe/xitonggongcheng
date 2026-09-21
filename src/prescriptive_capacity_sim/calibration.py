@@ -133,7 +133,17 @@ def write_calibration(
     validation_intervals.insert(0, "split", "validation")
     _atomic_csv(pd.concat([train_intervals, validation_intervals], ignore_index=True), paths.intervals)
     _atomic_json(result.parameters, paths.parameters)
-    _atomic_json(asdict(result.quality), paths.quality)
+    quality_payload = asdict(result.quality)
+    quality_payload["validation_reference"] = {
+        "service_seconds": _empirical_quantiles(
+            result.validation_calls.loc[result.validation_calls["service_seconds"].gt(0)],
+            "service_seconds",
+        ),
+        "queue_seconds": _empirical_quantiles(
+            result.validation_calls, "queue_seconds"
+        ),
+    }
+    _atomic_json(quality_payload, paths.quality)
     _atomic_json(manifest, paths.manifest)
     return paths
 
@@ -255,11 +265,11 @@ def _fit_disruption(
     for left, right in zip(states[:-1], states[1:]):
         transitions[left, right] += 1.0
     transitions /= transitions.sum(axis=1, keepdims=True)
-    base = float(daily[states == 0].mean()) if np.any(states == 0) else float(daily.mean())
+    overall = max(float(daily.mean()), 1e-6)
     multipliers = []
     for state in range(3):
-        value = float(daily[states == state].mean()) if np.any(states == state) else base
-        multipliers.append(max(value / max(base, 1e-6), 1.0))
+        value = float(daily[states == state].mean()) if np.any(states == state) else overall
+        multipliers.append(max(value / overall, 1e-6))
     return {
         "thresholds": {"high": q75, "severe": q95},
         "transition_matrix": transitions.tolist(),

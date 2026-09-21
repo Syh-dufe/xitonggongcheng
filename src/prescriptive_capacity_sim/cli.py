@@ -84,8 +84,22 @@ def _simulate(
     interval_path = config.calibration_path.with_name("calibration_intervals.csv")
     intervals = pd.read_csv(interval_path)
     validation_intervals = intervals.loc[intervals["split"].eq("validation")]
+    quality_path = config.calibration_path.with_name("data_quality_report.json")
+    quality_report = json.loads(quality_path.read_text(encoding="utf-8"))
+    reference = quality_report["validation_reference"]
+    reference_rows = []
+    for service_class in parameters["classes"]:
+        service_values = reference["service_seconds"][service_class]
+        queue_values = reference["queue_seconds"][service_class]
+        for index in range(max(len(service_values), len(queue_values))):
+            reference_rows.append({
+                "service_class": service_class,
+                "service_seconds": service_values[index % len(service_values)],
+                "queue_seconds": queue_values[index % len(queue_values)],
+            })
+    validation_calls = pd.DataFrame(reference_rows)
     validation = compare_real_and_simulated(
-        validation_intervals, data.observed, None, parameters
+        validation_intervals, data.observed, validation_calls, parameters
     )
     output.mkdir(parents=True, exist_ok=True)
     data.observed.to_csv(output / "observed_log.csv", index=False)

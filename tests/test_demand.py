@@ -26,7 +26,11 @@ def _parameters():
         "periods_per_day": 48,
         "arrival": arrivals,
         "priority_rate": {"regular": 0.1, "specialist": 0.2, "callback_special": 0.3},
-        "empirical": {"service_seconds": samples, "patience_seconds": samples},
+        "empirical": {
+            "service_seconds": samples,
+            "patience_seconds": samples,
+            "queue_seconds": samples,
+        },
         "disruption": {
             "arrival_multipliers": [1.0, 1.5, 2.0],
             "transition_matrix": [[0.8, 0.15, 0.05], [0.2, 0.6, 0.2], [0.1, 0.3, 0.6]],
@@ -56,3 +60,4 @@ def test_sampled_calls_have_valid_operational_attributes():
     assert all(call.service_minutes > 0 for call in draw.new_calls)
     assert all(call.patience_periods >= 1 for call in draw.new_calls)
     assert all(call.service_class in range(3) for call in draw.new_calls)
+    assert all(call.intraperiod_wait_minutes >= 1.0 for call in draw.new_calls)

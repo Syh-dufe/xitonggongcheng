@@ -91,13 +91,24 @@ class CallCenterEnvironment:
             served_counts[i] - served_priority[i] for i in range(3)
         )
         wait_observations = [
-            call.waited_periods * resource.minutes_per_period
+            call.intraperiod_wait_minutes
+            + call.waited_periods * resource.minutes_per_period
             for call in (*served_calls, *abandoned_calls)
         ]
         mean_wait = float(np.mean(wait_observations)) if wait_observations else 0.0
+        exit_calls = (*served_calls, *abandoned_calls)
+        mean_wait_by_class = tuple(
+            float(np.mean([
+                call.intraperiod_wait_minutes
+                + call.waited_periods * resource.minutes_per_period
+                for call in exit_calls if call.service_class == service_class
+            ])) if any(call.service_class == service_class for call in exit_calls) else 0.0
+            for service_class in range(3)
+        )
         p95_wait = float(np.percentile(wait_observations, 95)) if wait_observations else 0.0
         on_time = sum(
-            call.waited_periods * resource.minutes_per_period
+            call.intraperiod_wait_minutes
+            + call.waited_periods * resource.minutes_per_period
             <= self.config.safety.target_wait_minutes
             for call in served_calls
         )
@@ -160,6 +171,7 @@ class CallCenterEnvironment:
             total_cost=float(total_cost),
             service_level=float(service_level),
             mean_wait_minutes=mean_wait,
+            mean_wait_by_class=mean_wait_by_class,  # type: ignore[arg-type]
             p95_wait_minutes=p95_wait,
             safety_violation=safety_violation,
         )

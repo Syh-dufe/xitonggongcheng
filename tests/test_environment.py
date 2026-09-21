@@ -70,3 +70,4 @@ def test_priority_precedes_nonpriority_within_class():
     result = env.transition(SystemState.empty(0, "monday"), 0, _draw(*calls))
     assert result.served_priority[0] == 1
     assert result.served_nonpriority[0] == 0
+    assert len(result.mean_wait_by_class) == 3

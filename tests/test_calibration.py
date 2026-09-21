@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from prescriptive_capacity_sim.calibration import calibrate_calls, write_calibration
 from prescriptive_capacity_sim.ingest import load_month
 
@@ -39,6 +41,9 @@ def test_calibration_records_empirical_distributions(tmp_path):
     assert paths.intervals.is_file()
     assert paths.quality.is_file()
     assert paths.manifest.is_file()
+    quality_report = json.loads(paths.quality.read_text(encoding="utf-8"))
+    assert "validation_reference" in quality_report
+    assert "service_seconds" in quality_report["validation_reference"]
 
 
 def test_analysis_artifacts_contain_no_identifiers(tmp_path):
@@ -48,3 +53,14 @@ def test_analysis_artifacts_contain_no_identifiers(tmp_path):
     header = paths.intervals.read_text(encoding="utf-8").splitlines()[0]
     assert "customer_id" not in header
     assert "server" not in header
+
+
+def test_disruption_multipliers_preserve_overall_arrival_scale():
+    calls, quality = _sample_calls()
+    result = calibrate_calls(calls, quality=quality, train_fraction=0.70)
+    disruption = result.parameters["disruption"]
+    counts = disruption["training_state_counts"]
+    weights = [counts["normal"], counts["high"], counts["severe"]]
+    multipliers = disruption["arrival_multipliers"]
+    weighted_mean = sum(w * m for w, m in zip(weights, multipliers)) / sum(weights)
+    assert weighted_mean == pytest.approx(1.0)

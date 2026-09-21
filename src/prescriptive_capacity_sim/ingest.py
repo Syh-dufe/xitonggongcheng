@@ -77,7 +77,7 @@ def load_month(path: str | Path) -> tuple[pd.DataFrame, DataQualityCounts]:
     invalid_time = raw["arrival_ts"].isna() | raw["call_date"].isna()
     unknown_type = ~raw["type"].isin(SERVICE_CLASS_MAP)
     phantom = raw["outcome"].eq("PHANTOM")
-    prequeue = raw["q_start"].eq("0:00:00") | raw["q_time"].fillna(0).le(0)
+    prequeue = raw["outcome"].eq("HANG") & raw["q_start"].isin({"0:00:00", "00:00:00"})
 
     quality = DataQualityCounts(
         total_rows=int(total),
