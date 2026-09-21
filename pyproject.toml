@@ -4,13 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "prescriptive-capacity-sim"
-version = "0.1.0"
-description = "Simulation environment for causal prescriptive capacity scheduling"
+version = "0.2.0"
+description = "Semisynthetic call-center capacity simulation calibrated from operational logs"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "numpy>=2.0",
   "pandas>=2.2",
+  "scipy>=1.14",
   "PyYAML>=6.0",
 ]
 
@@ -26,4 +27,4 @@ packages = ["src/prescriptive_capacity_sim"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--strict-markers"
-
+markers = ["integration: requires the locally downloaded raw data"]

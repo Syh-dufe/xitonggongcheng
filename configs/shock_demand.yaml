@@ -1,3 +1,1 @@
-demand:
-  shock_arrival_multipliers: [1.0, 2.0, 3.0]
-
+demand_shock_scale: 1.75

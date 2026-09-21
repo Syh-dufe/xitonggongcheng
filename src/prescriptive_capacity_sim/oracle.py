@@ -1,11 +1,11 @@
-"""Counterfactual action branching with common exogenous randomness."""
+"""Common-random-number counterfactual action evaluation."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .environment import CapacityEnvironment
-from .state import ExogenousShock, PeriodResult, SystemState
+from .environment import CallCenterEnvironment
+from .state import ExogenousDraw, PeriodResult, SystemState
 
 
 @dataclass(frozen=True)
@@ -15,14 +15,10 @@ class OracleEvaluation:
 
 
 def evaluate_actions(
-    environment: CapacityEnvironment,
+    environment: CallCenterEnvironment,
     state: SystemState,
-    shock: ExogenousShock,
+    draw: ExogenousDraw,
 ) -> OracleEvaluation:
-    results = tuple(
-        environment.transition(state, action, shock)
-        for action in range(len(environment.config.behavior.action_levels))
-    )
-    oracle_action = min(range(len(results)), key=lambda action: results[action].total_cost)
-    return OracleEvaluation(results=results, oracle_action=oracle_action)
-
+    results = tuple(environment.transition(state, action, draw) for action in range(4))
+    oracle_action = min(range(4), key=lambda action: results[action].total_cost)
+    return OracleEvaluation(results, oracle_action)

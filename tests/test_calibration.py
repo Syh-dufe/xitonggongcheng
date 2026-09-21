@@ -1,99 +1,66 @@
-from __future__ import annotations
+import json
+from pathlib import Path
 
-from datetime import datetime, timedelta
-
-import numpy as np
 import pytest
 
-from prescriptive_capacity_sim.calibration import fit_empirical_calibration
-from prescriptive_capacity_sim.callcenter_data import QueueCall
+from prescriptive_capacity_sim.calibration import calibrate_calls, write_calibration
+from prescriptive_capacity_sim.ingest import load_month
 
 
-def _call(
-    key: str,
-    *,
-    call_type: str,
-    wait: float,
-    outcome: str,
-    service: float | None,
-) -> QueueCall:
-    return QueueCall(
-        call_key=key,
-        queue_entry=datetime(1999, 1, 1) + timedelta(seconds=int(key)),
-        call_type=call_type,
-        priority=1,
-        observed_wait_seconds=wait,
-        outcome=outcome,
-        observed_service_seconds=service,
-    )
+FIXTURE = Path(__file__).parent / "fixtures" / "calls_sample.txt"
 
 
-def test_service_sampling_is_stratified_with_pooled_fallback() -> None:
-    calibration = fit_empirical_calibration(
-        [
-            _call("1", call_type="PS", wait=2, outcome="AGENT", service=10),
-            _call("2", call_type="PS", wait=4, outcome="AGENT", service=20),
-            _call("3", call_type="NE", wait=5, outcome="AGENT", service=90),
-            _call("4", call_type="PS", wait=8, outcome="HANG", service=None),
-        ]
-    )
+def _sample_calls():
+    frame, quality = load_month(FIXTURE)
+    return frame, quality
 
-    rng = np.random.default_rng(7)
-    ps_samples = {calibration.sample_service("PS", rng) for _ in range(30)}
-    unknown_samples = {
-        calibration.sample_service("UNKNOWN", rng) for _ in range(60)
+
+def test_split_is_chronological_and_uses_train_dates_only():
+    calls, quality = _sample_calls()
+    result = calibrate_calls(calls, quality=quality, train_fraction=0.70)
+    assert max(result.train_dates) < min(result.validation_dates)
+    assert result.parameters["fit_scope"] == "train_only"
+
+
+def test_half_hour_aggregation_conserves_training_arrivals():
+    calls, quality = _sample_calls()
+    result = calibrate_calls(calls, quality=quality, train_fraction=0.70)
+    assert result.intervals["arrivals"].sum() == len(result.train_calls)
+
+
+def test_calibration_records_empirical_distributions(tmp_path):
+    calls, quality = _sample_calls()
+    result = calibrate_calls(calls, quality=quality, train_fraction=0.70)
+    paths = write_calibration(result, tmp_path, source_files=(FIXTURE,))
+    params = json.loads(paths.parameters.read_text(encoding="utf-8"))
+    assert set(params["classes"]) == {
+        "regular", "specialist", "callback_special"
     }
-
-    assert ps_samples <= {10.0, 20.0}
-    assert 90.0 in unknown_samples
-
-
-def test_sampling_is_reproducible_for_identical_seeds() -> None:
-    calibration = fit_empirical_calibration(
-        [
-            _call("1", call_type="PS", wait=5, outcome="HANG", service=None),
-            _call("2", call_type="PS", wait=10, outcome="AGENT", service=20),
-            _call("3", call_type="PS", wait=15, outcome="HANG", service=None),
-            _call("4", call_type="PS", wait=20, outcome="AGENT", service=40),
-        ]
-    )
-
-    first_rng = np.random.default_rng(123)
-    second_rng = np.random.default_rng(123)
-    first = [
-        (calibration.sample_service("PS", first_rng), calibration.sample_patience(first_rng))
-        for _ in range(20)
-    ]
-    second = [
-        (calibration.sample_service("PS", second_rng), calibration.sample_patience(second_rng))
-        for _ in range(20)
-    ]
-
-    assert first == second
+    assert "service_seconds" in params["empirical"]
+    assert "patience_seconds" in params["empirical"]
+    assert paths.intervals.is_file()
+    assert paths.quality.is_file()
+    assert paths.manifest.is_file()
+    quality_report = json.loads(paths.quality.read_text(encoding="utf-8"))
+    assert "validation_reference" in quality_report
+    assert "service_seconds" in quality_report["validation_reference"]
 
 
-def test_patience_curve_uses_answered_calls_as_right_censored() -> None:
-    calibration = fit_empirical_calibration(
-        [
-            _call("1", call_type="PS", wait=5, outcome="HANG", service=None),
-            _call("2", call_type="PS", wait=10, outcome="AGENT", service=20),
-            _call("3", call_type="PS", wait=15, outcome="HANG", service=None),
-        ]
-    )
-
-    np.testing.assert_array_equal(calibration.patience_support_seconds, [5.0, 15.0])
-    np.testing.assert_allclose(calibration.patience_survival, [2 / 3, 0.0])
+def test_analysis_artifacts_contain_no_identifiers(tmp_path):
+    calls, quality = _sample_calls()
+    result = calibrate_calls(calls, quality=quality, train_fraction=0.70)
+    paths = write_calibration(result, tmp_path, source_files=(FIXTURE,))
+    header = paths.intervals.read_text(encoding="utf-8").splitlines()[0]
+    assert "customer_id" not in header
+    assert "server" not in header
 
 
-def test_calibration_requires_positive_service_and_abandonment_observations() -> None:
-    answered_only = [
-        _call("1", call_type="PS", wait=1, outcome="AGENT", service=10)
-    ]
-    abandoned_only = [
-        _call("2", call_type="PS", wait=2, outcome="HANG", service=None)
-    ]
-
-    with pytest.raises(ValueError, match="abandonment"):
-        fit_empirical_calibration(answered_only)
-    with pytest.raises(ValueError, match="service"):
-        fit_empirical_calibration(abandoned_only)
+def test_disruption_multipliers_preserve_overall_arrival_scale():
+    calls, quality = _sample_calls()
+    result = calibrate_calls(calls, quality=quality, train_fraction=0.70)
+    disruption = result.parameters["disruption"]
+    counts = disruption["training_state_counts"]
+    weights = [counts["normal"], counts["high"], counts["severe"]]
+    multipliers = disruption["arrival_multipliers"]
+    weighted_mean = sum(w * m for w, m in zip(weights, multipliers)) / sum(weights)
+    assert weighted_mean == pytest.approx(1.0)

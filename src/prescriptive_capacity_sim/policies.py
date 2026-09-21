@@ -1,4 +1,4 @@
-"""Baseline policies and a small extension interface for new methods."""
+"""Reference policies for paired out-of-sample evaluation."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ import numpy as np
 
 from .behavior import HistoricalBehaviorPolicy
 from .config import SimulationConfig
-from .environment import CapacityEnvironment
+from .environment import CallCenterEnvironment
 from .oracle import evaluate_actions
-from .state import ExogenousShock, SystemState
+from .state import ExogenousDraw, SystemState
 
 
 class Policy(Protocol):
@@ -20,90 +20,71 @@ class Policy(Protocol):
     def act(
         self,
         state: SystemState,
-        shock: ExogenousShock,
-        environment: CapacityEnvironment,
+        draw: ExogenousDraw,
+        environment: CallCenterEnvironment,
         rng: np.random.Generator,
     ) -> int: ...
-
-
-@dataclass(frozen=True)
-class FixedActionPolicy:
-    action: int
-    name: str | None = None
-
-    def __post_init__(self) -> None:
-        if self.name is None:
-            object.__setattr__(self, "name", f"fixed_{self.action}")
-
-    def act(self, state, shock, environment, rng) -> int:
-        if not 0 <= self.action < len(environment.config.behavior.action_levels):
-            raise ValueError(f"invalid fixed action: {self.action}")
-        return self.action
-
-
-@dataclass(frozen=True)
-class RandomPolicy:
-    name: str = "random"
-
-    def act(self, state, shock, environment, rng) -> int:
-        return int(rng.integers(0, len(environment.config.behavior.action_levels)))
 
 
 class HistoricalPolicy:
     name = "historical"
 
     def __init__(self, config: SimulationConfig):
-        self._behavior = HistoricalBehaviorPolicy(config)
+        self.behavior = HistoricalBehaviorPolicy(config)
 
-    def act(self, state, shock, environment, rng) -> int:
-        action, _, _ = self._behavior.act(state, rng, shock.manager_alarm)
+    def act(self, state, draw, environment, rng) -> int:
+        action, _, _ = self.behavior.act(state, draw.manager_alarm, rng)
         return action
+
+
+@dataclass(frozen=True)
+class RandomPolicy:
+    name: str = "random"
+
+    def act(self, state, draw, environment, rng) -> int:
+        return int(rng.integers(0, 4))
+
+
+@dataclass(frozen=True)
+class FixedActionPolicy:
+    action: int
+    name: str = ""
+
+    def __post_init__(self):
+        if not self.name:
+            object.__setattr__(self, "name", f"fixed_{self.action}")
+
+    def act(self, state, draw, environment, rng) -> int:
+        return self.action
 
 
 @dataclass(frozen=True)
 class MyopicOraclePolicy:
     name: str = "myopic_oracle"
 
-    def act(self, state, shock, environment, rng) -> int:
-        return evaluate_actions(environment, state, shock).oracle_action
+    def act(self, state, draw, environment, rng) -> int:
+        return evaluate_actions(environment, state, draw).oracle_action
 
 
 @dataclass(frozen=True)
 class RollingOraclePolicy:
-    horizon: int = 3
+    queue_penalty: float = 2.0
     name: str = "rolling_oracle"
 
-    def act(self, state, shock, environment, rng) -> int:
-        if self.horizon <= 0:
-            raise ValueError("horizon must be positive")
-        base_seed = int(rng.integers(0, 2**32 - 1))
-        totals: list[float] = []
-        for first_action in range(len(environment.config.behavior.action_levels)):
-            local_rng = np.random.default_rng(base_seed)
-            first = environment.transition(state, first_action, shock)
-            total = first.total_cost
-            rollout_state = first.next_state
-            for _ in range(1, self.horizon):
-                future_shock = environment.sample_exogenous(
-                    rollout_state, local_rng, daily_effect=0.0
-                )
-                evaluation = evaluate_actions(environment, rollout_state, future_shock)
-                chosen = evaluation.results[evaluation.oracle_action]
-                total += chosen.total_cost
-                rollout_state = chosen.next_state
-            totals.append(total)
-        return int(np.argmin(totals))
+    def act(self, state, draw, environment, rng) -> int:
+        evaluation = evaluate_actions(environment, state, draw)
+        return min(
+            range(4),
+            key=lambda action: (
+                evaluation.results[action].total_cost
+                + self.queue_penalty * evaluation.results[action].next_state.total_queue
+            ),
+        )
 
 
 def default_policies(config: SimulationConfig) -> list[Policy]:
     return [
-        HistoricalPolicy(config),
-        RandomPolicy(),
-        FixedActionPolicy(0),
-        FixedActionPolicy(1),
-        FixedActionPolicy(2),
-        FixedActionPolicy(3),
-        MyopicOraclePolicy(),
-        RollingOraclePolicy(),
+        HistoricalPolicy(config), RandomPolicy(),
+        *(FixedActionPolicy(action) for action in range(4)),
+        MyopicOraclePolicy(), RollingOraclePolicy(),
     ]
-

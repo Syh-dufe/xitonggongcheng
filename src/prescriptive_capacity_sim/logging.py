@@ -1,4 +1,4 @@
-"""Historical observational log generation and isolated oracle tables."""
+"""Generate factual historical logs and isolated oracle counterfactual tables."""
 
 from __future__ import annotations
 
@@ -9,9 +9,13 @@ import pandas as pd
 
 from .behavior import HistoricalBehaviorPolicy
 from .config import SimulationConfig
-from .environment import CapacityEnvironment
+from .demand import CalibratedDemandProcess
+from .environment import CallCenterEnvironment
 from .oracle import evaluate_actions
-from .state import SystemState
+from .state import PeriodResult, SystemState
+
+
+WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 
 
 @dataclass(frozen=True)
@@ -19,125 +23,133 @@ class GeneratedDataset:
     observed: pd.DataFrame
     oracle: pd.DataFrame
     episodes: pd.DataFrame
+    metadata: dict
 
 
 def generate_dataset(
     config: SimulationConfig,
+    parameters: dict | str,
+    *,
     days: int,
     seed: int,
 ) -> GeneratedDataset:
     if days <= 0:
         raise ValueError("days must be positive")
-    environment = CapacityEnvironment(config)
+    demand = CalibratedDemandProcess(
+        parameters,
+        hidden_confounding_strength=config.behavior.hidden_confounding_strength,
+        demand_shock_scale=config.demand_shock_scale,
+    )
+    environment = CallCenterEnvironment(config)
     behavior = HistoricalBehaviorPolicy(config)
     observed_rows: list[dict] = []
     oracle_rows: list[dict] = []
     episode_rows: list[dict] = []
-    train_days = (
-        max(1, min(days - 1, int(np.floor(days * config.train_fraction))))
-        if days > 1
-        else 1
-    )
+    train_days = max(1, min(days - 1, int(days * config.train_fraction))) if days > 1 else 1
 
     for episode_id in range(days):
+        weekday = WEEKDAYS[episode_id % len(WEEKDAYS)]
         split = "train" if episode_id < train_days else "test"
         env_rng = np.random.default_rng(np.random.SeedSequence([seed, episode_id, 0]))
         policy_rng = np.random.default_rng(np.random.SeedSequence([seed, episode_id, 1]))
-        daily_effect = float(env_rng.normal(0.0, config.demand.daily_effect_sigma))
-        state = environment.reset(episode_id)
+        state = environment.reset(episode_id, weekday)
         episode_cost = 0.0
-        episode_completed = 0
         episode_arrivals = 0
+        episode_served = 0
+        episode_abandoned = 0
         episode_violations = 0
-        episode_propensities: list[float] = []
-
+        propensities: list[float] = []
         for _ in range(config.periods_per_day):
-            shock = environment.sample_exogenous(state, env_rng, daily_effect)
+            draw = demand.sample(state, env_rng)
             action, propensity, probabilities = behavior.act(
-                state, policy_rng, shock.manager_alarm
+                state, draw.manager_alarm, policy_rng
             )
-            counterfactuals = evaluate_actions(environment, state, shock)
+            counterfactuals = evaluate_actions(environment, state, draw)
             realized = counterfactuals.results[action]
             observed_rows.append(
                 _observed_row(state, realized, propensity, probabilities, split)
             )
             oracle_rows.append(
-                _oracle_row(state, counterfactuals.results, counterfactuals.oracle_action, split)
+                _oracle_row(state, counterfactuals.results,
+                            counterfactuals.oracle_action, split)
             )
             episode_cost += realized.total_cost
-            episode_completed += sum(realized.completed)
             episode_arrivals += sum(realized.arrivals)
+            episode_served += sum(realized.served)
+            episode_abandoned += sum(realized.abandoned)
             episode_violations += int(realized.safety_violation)
-            episode_propensities.append(propensity)
+            propensities.append(propensity)
             state = realized.next_state
-
-        inverse_weights = np.reciprocal(np.asarray(episode_propensities))
-        episode_rows.append(
-            {
-                "episode_id": episode_id,
-                "split": split,
-                "seed": seed,
-                "daily_effect": daily_effect,
-                "total_cost": episode_cost,
-                "total_arrivals": episode_arrivals,
-                "total_completed": episode_completed,
-                "final_backlog": state.total_backlog,
-                "safety_violations": episode_violations,
-                "min_propensity": min(episode_propensities),
-                "propensity_ess": float(
-                    inverse_weights.sum() ** 2 / np.square(inverse_weights).sum()
-                ),
-            }
-        )
-
+        weights = 1.0 / np.asarray(propensities)
+        episode_rows.append({
+            "episode_id": episode_id,
+            "weekday": weekday,
+            "split": split,
+            "total_cost": episode_cost,
+            "total_arrivals": episode_arrivals,
+            "total_served": episode_served,
+            "total_abandoned": episode_abandoned,
+            "final_queue": state.total_queue,
+            "safety_violations": episode_violations,
+            "min_propensity": min(propensities),
+            "propensity_ess": float(weights.sum() ** 2 / np.square(weights).sum()),
+        })
     return GeneratedDataset(
         observed=pd.DataFrame(observed_rows),
         oracle=pd.DataFrame(oracle_rows),
         episodes=pd.DataFrame(episode_rows),
+        metadata={
+            "seed": seed,
+            "days": days,
+            "hidden_confounding_strength": config.behavior.hidden_confounding_strength,
+        },
     )
 
 
 def _observed_row(
     state: SystemState,
-    result,
+    result: PeriodResult,
     propensity: float,
     probabilities: np.ndarray,
     split: str,
 ) -> dict:
-    normal, urgent, critical = state.backlog
-    max_normal, max_urgent, max_critical = state.max_ages
-    next_normal, next_urgent, next_critical = result.next_state.backlog
     row = {
         "episode_id": state.episode_id,
         "split": split,
+        "weekday": state.weekday,
         "period": state.period,
-        "disruption_state": state.disruption_state,
-        "backlog_normal": normal,
-        "backlog_urgent": urgent,
-        "backlog_critical": critical,
-        "max_age_normal": max_normal,
-        "max_age_urgent": max_urgent,
-        "max_age_critical": max_critical,
+        "demand_state": state.demand_state,
+        "queue_regular": state.queue_counts[0],
+        "queue_specialist": state.queue_counts[1],
+        "queue_callback_special": state.queue_counts[2],
+        "queue_priority": state.priority_count,
+        "max_waited_periods": state.max_waited_periods,
         "action": result.action,
         "action_level": result.action_level,
         "propensity": propensity,
-        "arrival_normal": result.arrivals[0],
-        "arrival_urgent": result.arrivals[1],
-        "arrival_critical": result.arrivals[2],
-        "completed_normal": result.completed[0],
-        "completed_urgent": result.completed[1],
-        "completed_critical": result.completed[2],
-        "next_backlog_normal": next_normal,
-        "next_backlog_urgent": next_urgent,
-        "next_backlog_critical": next_critical,
-        "staffing_cost": result.staffing_cost,
-        "backlog_cost": result.backlog_cost,
-        "late_cost": result.late_cost,
-        "overload_cost": result.overload_cost,
-        "safety_cost": result.safety_cost,
+        "arrival_regular": result.arrivals[0],
+        "arrival_specialist": result.arrivals[1],
+        "arrival_callback_special": result.arrivals[2],
+        "served_regular": result.served[0],
+        "served_specialist": result.served[1],
+        "served_callback_special": result.served[2],
+        "abandoned_regular": result.abandoned[0],
+        "abandoned_specialist": result.abandoned[1],
+        "abandoned_callback_special": result.abandoned[2],
+        "next_queue": result.next_state.total_queue,
+        "temporary_agents": result.temporary_agents,
+        "base_staff_cost": result.base_staff_cost,
+        "augmentation_cost": result.augmentation_cost,
+        "waiting_cost": result.waiting_cost,
+        "abandonment_cost": result.abandonment_cost,
+        "service_level_cost": result.service_level_cost,
         "total_cost": result.total_cost,
-        "temporary_staff": result.temporary_staff,
-        "service_rate": result.service_rate,
+        "service_level": result.service_level,
+        "mean_wait_minutes": result.mean_wait_minutes,
+        "mean_wait_regular": result.mean_wait_by_class[0],
+        "mean_wait_specialist": result.mean_wait_by_class[1],
+        "mean_wait_callback_special": result.mean_wait_by_class[2],
+        "p95_wait_minutes": result.p95_wait_minutes,
         "safety_violation": result.safety_violation,
     }
     for action, probability in enumerate(probabilities):
@@ -147,7 +159,7 @@ def _observed_row(
 
 def _oracle_row(
     state: SystemState,
-    results: tuple,
+    results: tuple[PeriodResult, ...],
     oracle_action: int,
     split: str,
 ) -> dict:
@@ -159,7 +171,9 @@ def _oracle_row(
     }
     for action, result in enumerate(results):
         row[f"potential_cost_a{action}"] = result.total_cost
-        row[f"potential_service_rate_a{action}"] = result.service_rate
+        row[f"potential_service_level_a{action}"] = result.service_level
+        row[f"potential_abandoned_a{action}"] = sum(result.abandoned)
+        row[f"potential_p95_wait_a{action}"] = result.p95_wait_minutes
         row[f"potential_safety_violation_a{action}"] = result.safety_violation
-        row[f"potential_next_backlog_a{action}"] = result.next_state.total_backlog
+        row[f"potential_next_queue_a{action}"] = result.next_state.total_queue
     return row

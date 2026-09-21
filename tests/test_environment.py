@@ -1,56 +1,73 @@
-from dataclasses import replace
-
 from prescriptive_capacity_sim.config import SimulationConfig
-from prescriptive_capacity_sim.environment import CapacityEnvironment
-from prescriptive_capacity_sim.state import ExogenousShock, SystemState
+from prescriptive_capacity_sim.environment import CallCenterEnvironment
+from prescriptive_capacity_sim.state import ExogenousDraw, QueuedCall, SystemState
 
 
-def fixed_shock(arrivals=(4, 2, 1), next_state=0) -> ExogenousShock:
-    return ExogenousShock(
-        arrivals=arrivals,
-        next_disruption_state=next_state,
-        service_multiplier=1.0,
+def _draw(*calls):
+    return ExogenousDraw(
+        new_calls=tuple(calls),
+        next_demand_state=0,
+        regular_availability=1.0,
+        specialist_availability=1.0,
+        service_efficiency=1.0,
         manager_alarm=0.0,
     )
 
 
-def test_reset_is_reproducible_and_empty() -> None:
-    cfg = SimulationConfig.default()
-    env = CapacityEnvironment(cfg)
-    assert env.reset(episode_id=7) == env.reset(episode_id=7)
-    assert env.reset(episode_id=7).backlog == (0, 0, 0)
+def test_transition_conserves_each_queue():
+    env = CallCenterEnvironment(SimulationConfig.default())
+    state = SystemState(
+        episode_id=0,
+        period=0,
+        weekday="monday",
+        demand_state=0,
+        waiting=(QueuedCall(0, False, 2.0, 3, 1),),
+    )
+    result = env.transition(state, action=1, draw=_draw(QueuedCall(1, False, 3.0, 2)))
+    prior = state.queue_counts
+    for klass in range(3):
+        assert result.next_state.queue_counts[klass] == (
+            prior[klass] + result.arrivals[klass]
+            - result.served[klass] - result.abandoned[klass]
+        )
 
 
-def test_transition_obeys_flow_conservation_and_service_bounds() -> None:
-    cfg = SimulationConfig.default()
-    env = CapacityEnvironment(cfg)
-    state = SystemState.from_backlog(cfg, 0, 3, (5, 3, 2), disruption_state=0)
-    result = env.transition(state, action=1, shock=fixed_shock())
-    for prior, arrived, completed, remaining in zip(
-        state.backlog, result.arrivals, result.completed, result.next_state.backlog
-    ):
-        assert remaining == prior + arrived - completed
-        assert 0 <= completed <= prior + arrived
-    assert all(value >= 0 for value in result.next_state.backlog)
+def test_specialists_cross_serve_regular_at_reduced_efficiency():
+    cfg = SimulationConfig.default().with_overrides(
+        resources={"regular_agents": 0, "specialist_agents": 1,
+                   "cross_skill_efficiency": 0.5}
+    )
+    env = CallCenterEnvironment(cfg)
+    state = SystemState.empty(0, "monday")
+    result = env.transition(state, 0, _draw(QueuedCall(0, False, 10.0, 2)))
+    assert result.specialist_minutes_cross_served == 20.0
+    assert result.served[0] == 1
 
 
-def test_higher_action_has_higher_staffing_cost_for_same_shock() -> None:
-    cfg = SimulationConfig.default()
-    env = CapacityEnvironment(cfg)
-    state = SystemState.from_backlog(cfg, 0, 3, (100, 50, 20), disruption_state=1)
-    low = env.transition(state, action=0, shock=fixed_shock((0, 0, 0), 1))
-    high = env.transition(state, action=3, shock=fixed_shock((0, 0, 0), 1))
-    assert high.staffing_cost > low.staffing_cost
-    assert sum(high.completed) >= sum(low.completed)
+def test_more_capacity_does_not_increase_abandonment():
+    cfg = SimulationConfig.default().with_overrides(
+        resources={"regular_agents": 1, "specialist_agents": 0,
+                   "minutes_per_period": 1}
+    )
+    env = CallCenterEnvironment(cfg)
+    state = SystemState.empty(0, "monday")
+    calls = tuple(QueuedCall(0, False, 1.0, 1) for _ in range(3))
+    low = env.transition(state, 0, _draw(*calls))
+    high = env.transition(state, 3, _draw(*calls))
+    assert sum(high.abandoned) <= sum(low.abandoned)
 
 
-def test_unserved_work_ages_and_can_trigger_safety_violation() -> None:
-    base = SimulationConfig.default()
-    cfg = replace(base, base_staff=0, senior_staff=0)
-    cfg.validate()
-    env = CapacityEnvironment(cfg)
-    state = SystemState.from_backlog(cfg, 0, 0, (0, 0, 4), disruption_state=2)
-    result = env.transition(state, action=0, shock=fixed_shock((0, 0, 0), 2))
-    assert result.next_state.max_ages[2] == 1
-    assert result.safety_violation
-    assert result.total_cost >= result.safety_cost > 0
+def test_priority_precedes_nonpriority_within_class():
+    cfg = SimulationConfig.default().with_overrides(
+        resources={"regular_agents": 1, "specialist_agents": 0,
+                   "minutes_per_period": 1}
+    )
+    env = CallCenterEnvironment(cfg)
+    calls = (
+        QueuedCall(0, False, 1.0, 2),
+        QueuedCall(0, True, 1.0, 2),
+    )
+    result = env.transition(SystemState.empty(0, "monday"), 0, _draw(*calls))
+    assert result.served_priority[0] == 1
+    assert result.served_nonpriority[0] == 0
+    assert len(result.mean_wait_by_class) == 3
