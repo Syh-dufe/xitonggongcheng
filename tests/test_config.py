@@ -10,6 +10,7 @@ def test_defaults_use_documented_agent_pools():
     assert cfg.resources.regular_agents == 8
     assert cfg.resources.specialist_agents == 5
     assert cfg.behavior.action_levels == (0.0, 0.1, 0.2, 0.3)
+    assert cfg.periods_per_day == 48
 
 
 def test_missing_calibration_is_rejected(tmp_path: Path):

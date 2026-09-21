@@ -1,5 +1,2 @@
-demand:
-  shock_arrival_multipliers: [1.0, 1.8, 2.8]
-  shock_capacity_multipliers: [1.0, 0.75, 0.45]
-  shock_service_multipliers: [1.0, 0.85, 0.65]
-
+demand_state_multipliers: [1.0, 1.6, 2.4]
+capacity_state_multipliers: [1.0, 0.75, 0.50]

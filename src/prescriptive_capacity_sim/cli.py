@@ -1,29 +1,40 @@
-"""Command-line entry points for dataset generation and policy benchmarking."""
+"""Command-line workflow for calibration, generation, and benchmarking."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import platform
+import subprocess
 import sys
 from dataclasses import asdict
 from datetime import datetime, timezone
 from importlib.metadata import version
 from pathlib import Path
 
+import pandas as pd
+
+from .calibration import calibrate_calls, write_calibration
 from .config import SimulationConfig
 from .evaluation import evaluate_policies
+from .ingest import load_raw_directory
 from .logging import generate_dataset
 from .policies import default_policies
+from .validation import compare_real_and_simulated
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Generate biased capacity logs and leakage-safe counterfactuals."
+        description="Calibrate and run the semisynthetic call-center simulator."
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    for command in ("generate", "benchmark"):
-        child = subparsers.add_parser(command)
+    commands = parser.add_subparsers(dest="command", required=True)
+    calibrate = commands.add_parser("calibrate")
+    calibrate.add_argument("--raw-dir", required=True, type=Path)
+    calibrate.add_argument("--output", required=True, type=Path)
+    calibrate.add_argument("--train-fraction", type=float, default=0.70)
+    for name in ("generate", "benchmark"):
+        child = commands.add_parser(name)
         child.add_argument("--config", required=True, type=Path)
         child.add_argument("--days", required=True, type=int)
         child.add_argument("--seed", required=True, type=int)
@@ -33,29 +44,65 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    config = SimulationConfig.from_yaml(args.config)
-    output: Path = args.output
-    output.mkdir(parents=True, exist_ok=True)
+    if args.command == "calibrate":
+        return _calibrate(args.raw_dir, args.output, args.train_fraction)
+    return _simulate(args.config, args.days, args.seed, args.output, args.command)
 
-    data = generate_dataset(config, days=args.days, seed=args.seed)
-    metrics = evaluate_policies(
-        config,
-        default_policies(config),
-        days=args.days,
-        seed=args.seed,
+
+def _calibrate(raw_dir: Path, output: Path, train_fraction: float) -> int:
+    ingested = load_raw_directory(raw_dir)
+    result = calibrate_calls(
+        ingested.calls, quality=ingested.quality, train_fraction=train_fraction
     )
+    sources = [raw_dir / name for name in ingested.source_files]
+    write_calibration(result, output, source_files=sources)
+    return 0
+
+
+def _simulate(
+    config_path: Path,
+    days: int,
+    seed: int,
+    output: Path,
+    command: str,
+) -> int:
+    config = SimulationConfig.from_yaml(config_path)
+    config.validate_for_simulation()
+    parameters = json.loads(config.calibration_path.read_text(encoding="utf-8"))
+    manifest_path = config.calibration_path.with_name("calibration_manifest.json")
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"calibration manifest not found: {manifest_path}")
+    calibration_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    parameter_hash = _json_hash(parameters)
+    if calibration_manifest.get("parameters_sha256") != parameter_hash:
+        raise ValueError("calibration parameter hash does not match its manifest")
+
+    data = generate_dataset(config, parameters, days=days, seed=seed)
+    metrics = evaluate_policies(
+        config, parameters, default_policies(config), days=days, seed=seed
+    )
+    interval_path = config.calibration_path.with_name("calibration_intervals.csv")
+    intervals = pd.read_csv(interval_path)
+    validation_intervals = intervals.loc[intervals["split"].eq("validation")]
+    validation = compare_real_and_simulated(
+        validation_intervals, data.observed, None, parameters
+    )
+    output.mkdir(parents=True, exist_ok=True)
     data.observed.to_csv(output / "observed_log.csv", index=False)
     data.oracle.to_csv(output / "oracle_counterfactuals.csv", index=False)
     data.episodes.to_csv(output / "episode_summary.csv", index=False)
     metrics.to_csv(output / "policy_metrics.csv", index=False)
-
-    manifest = {
-        "command": args.command,
+    validation.to_csv(output / "simulation_validation.csv", index=False)
+    run_manifest = {
+        "command": command,
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
-        "config_path": str(args.config.resolve()),
-        "config": asdict(config),
-        "days": args.days,
-        "seed": args.seed,
+        "status": "exploratory",
+        "config_path": str(config_path.resolve()),
+        "config": _serialize_config(config),
+        "calibration_parameters_sha256": parameter_hash,
+        "raw_source_sha256": calibration_manifest.get("source_sha256", {}),
+        "days": days,
+        "seed": seed,
         "observed_rows": len(data.observed),
         "oracle_rows": len(data.oracle),
         "episode_rows": len(data.episodes),
@@ -63,14 +110,34 @@ def main(argv: list[str] | None = None) -> int:
         "python": sys.version,
         "platform": platform.platform(),
         "package_version": version("prescriptive-capacity-sim"),
-        "status": "exploratory",
+        "git_revision": _git_revision(),
     }
     (output / "run_manifest.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(run_manifest, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return 0
 
 
+def _json_hash(value: dict) -> str:
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _serialize_config(config: SimulationConfig) -> dict:
+    value = asdict(config)
+    value["calibration_path"] = str(config.calibration_path)
+    return value
+
+
+def _git_revision() -> str | None:
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], check=True, capture_output=True,
+            text=True, timeout=5,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -49,7 +49,7 @@ class SafetyConfig:
 @dataclass(frozen=True)
 class SimulationConfig:
     calibration_path: Path = Path("data/processed/calibration_parameters.json")
-    periods_per_day: int = 34
+    periods_per_day: int = 48
     train_fraction: float = 0.70
     resources: ResourceConfig = ResourceConfig()
     behavior: BehaviorConfig = BehaviorConfig()

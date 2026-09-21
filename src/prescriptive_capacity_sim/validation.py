@@ -13,7 +13,7 @@ SERVICE_CLASSES = ("regular", "specialist", "callback_special")
 def compare_real_and_simulated(
     real_intervals: pd.DataFrame,
     simulated_log: pd.DataFrame,
-    real_calls: pd.DataFrame,
+    real_calls: pd.DataFrame | None,
     parameters: dict,
 ) -> pd.DataFrame:
     rows: list[dict] = []
@@ -34,10 +34,15 @@ def compare_real_and_simulated(
         _append(rows, "abandonment_rate_error", service_class,
                 real_abandoned / real_total if real_total else 0.0,
                 sim_abandoned / sim_total if sim_total else 0.0)
-        real_service = real_calls.loc[
-            real_calls["service_class"].eq(service_class)
-            & real_calls["service_seconds"].gt(0), "service_seconds"
-        ].to_numpy(dtype=float)
+        if real_calls is not None and not real_calls.empty:
+            real_service = real_calls.loc[
+                real_calls["service_class"].eq(service_class)
+                & real_calls["service_seconds"].gt(0), "service_seconds"
+            ].to_numpy(dtype=float)
+        else:
+            real_service = real.get(
+                "mean_service_seconds", pd.Series(dtype=float)
+            ).dropna().to_numpy(dtype=float)
         simulated_service = np.asarray(
             parameters["empirical"]["service_seconds"][service_class], dtype=float
         )

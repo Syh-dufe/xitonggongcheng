@@ -127,7 +127,11 @@ def write_calibration(
         "validation_calls": len(result.validation_calls),
         "parameters_sha256": _json_sha256(result.parameters),
     }
-    _atomic_csv(result.intervals, paths.intervals)
+    train_intervals = result.intervals.copy()
+    train_intervals.insert(0, "split", "train")
+    validation_intervals = result.validation_intervals.copy()
+    validation_intervals.insert(0, "split", "validation")
+    _atomic_csv(pd.concat([train_intervals, validation_intervals], ignore_index=True), paths.intervals)
     _atomic_json(result.parameters, paths.parameters)
     _atomic_json(asdict(result.quality), paths.quality)
     _atomic_json(manifest, paths.manifest)
