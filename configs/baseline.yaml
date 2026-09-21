@@ -1,5 +1,17 @@
-periods_per_day: 48
+calibration_path: data/processed/calibration_parameters.json
+periods_per_day: 34
+train_fraction: 0.70
+
+resources:
+  regular_agents: 8
+  specialist_agents: 5
+  supervisor_emergency_agents: 1
+  cross_skill_efficiency: 0.75
+  callback_regular_share: 0.50
+  minutes_per_period: 30
+
 behavior:
   bias_strength: 1.0
   temperature: 1.0
   hidden_confounding_strength: 0.0
+  action_levels: [0.0, 0.1, 0.2, 0.3]

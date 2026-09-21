@@ -1,6 +1,3 @@
-"""Causal prescriptive capacity scheduling simulator."""
+"""Semisynthetic call-center service-capacity simulator."""
 
-from .config import SimulationConfig
-
-__all__ = ["SimulationConfig"]
-
+__version__ = "0.2.0"
