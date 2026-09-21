@@ -30,6 +30,7 @@ def evaluate_policies(
         demand = CalibratedDemandProcess(
             parameters,
             hidden_confounding_strength=config.behavior.hidden_confounding_strength,
+            demand_shock_scale=config.demand_shock_scale,
         )
         environment = CallCenterEnvironment(config)
         total_cost = 0.0

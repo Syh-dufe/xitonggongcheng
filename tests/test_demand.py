@@ -61,3 +61,15 @@ def test_sampled_calls_have_valid_operational_attributes():
     assert all(call.patience_periods >= 1 for call in draw.new_calls)
     assert all(call.service_class in range(3) for call in draw.new_calls)
     assert all(call.intraperiod_wait_minutes >= 1.0 for call in draw.new_calls)
+
+
+def test_demand_shock_scale_changes_state_contrast():
+    base = CalibratedDemandProcess(_parameters(), demand_shock_scale=1.0)
+    stressed = CalibratedDemandProcess(_parameters(), demand_shock_scale=2.0)
+    base_ratio = sum(base.expected_arrivals(4, "monday", 2)) / sum(
+        base.expected_arrivals(4, "monday", 0)
+    )
+    stressed_ratio = sum(stressed.expected_arrivals(4, "monday", 2)) / sum(
+        stressed.expected_arrivals(4, "monday", 0)
+    )
+    assert stressed_ratio > base_ratio

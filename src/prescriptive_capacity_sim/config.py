@@ -55,7 +55,7 @@ class SimulationConfig:
     behavior: BehaviorConfig = BehaviorConfig()
     costs: CostConfig = CostConfig()
     safety: SafetyConfig = SafetyConfig()
-    demand_state_multipliers: tuple[float, float, float] = (1.0, 1.25, 1.65)
+    demand_shock_scale: float = 1.0
     capacity_state_multipliers: tuple[float, float, float] = (1.0, 0.9, 0.75)
 
     @classmethod
@@ -84,9 +84,7 @@ class SimulationConfig:
             ),
             costs=CostConfig(**merged["costs"]),
             safety=SafetyConfig(**merged["safety"]),
-            demand_state_multipliers=tuple(
-                float(v) for v in merged["demand_state_multipliers"]
-            ),
+            demand_shock_scale=float(merged["demand_shock_scale"]),
             capacity_state_multipliers=tuple(
                 float(v) for v in merged["capacity_state_multipliers"]
             ),
@@ -97,7 +95,7 @@ class SimulationConfig:
     def with_overrides(self, **overrides: Any) -> "SimulationConfig":
         allowed = {
             "calibration_path", "periods_per_day", "train_fraction", "resources",
-            "behavior", "costs", "safety", "demand_state_multipliers",
+            "behavior", "costs", "safety", "demand_shock_scale",
             "capacity_state_multipliers",
         }
         unknown = set(overrides) - allowed
@@ -140,9 +138,9 @@ class SimulationConfig:
             raise ValueError("four strictly increasing nonnegative actions are required")
         if self.behavior.temperature <= 0 or self.behavior.bias_strength < 0:
             raise ValueError("invalid behavior configuration")
-        if len(self.demand_state_multipliers) != 3 or len(self.capacity_state_multipliers) != 3:
-            raise ValueError("three demand and capacity states are required")
-        if any(v <= 0 for v in (*self.demand_state_multipliers, *self.capacity_state_multipliers)):
+        if len(self.capacity_state_multipliers) != 3:
+            raise ValueError("three capacity states are required")
+        if self.demand_shock_scale <= 0 or any(v <= 0 for v in self.capacity_state_multipliers):
             raise ValueError("state multipliers must be positive")
         if any(v < 0 for v in asdict(self.costs).values()):
             raise ValueError("costs must be nonnegative")

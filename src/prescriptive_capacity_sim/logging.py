@@ -38,6 +38,7 @@ def generate_dataset(
     demand = CalibratedDemandProcess(
         parameters,
         hidden_confounding_strength=config.behavior.hidden_confounding_strength,
+        demand_shock_scale=config.demand_shock_scale,
     )
     environment = CallCenterEnvironment(config)
     behavior = HistoricalBehaviorPolicy(config)

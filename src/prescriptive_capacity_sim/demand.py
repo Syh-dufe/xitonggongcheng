@@ -17,11 +17,15 @@ class CalibratedDemandProcess:
         parameters: dict | str | Path,
         *,
         hidden_confounding_strength: float = 0.0,
+        demand_shock_scale: float = 1.0,
     ):
         if isinstance(parameters, (str, Path)):
             parameters = json.loads(Path(parameters).read_text(encoding="utf-8"))
         self.parameters = parameters
         self.hidden_confounding_strength = float(hidden_confounding_strength)
+        self.demand_shock_scale = float(demand_shock_scale)
+        if self.demand_shock_scale <= 0:
+            raise ValueError("demand_shock_scale must be positive")
         self.period_minutes = int(parameters["period_minutes"])
         self.periods_per_day = int(parameters.get("periods_per_day", 48))
 
@@ -35,7 +39,11 @@ class CalibratedDemandProcess:
         multipliers = self.parameters["disruption"].get(
             "arrival_multipliers", [1.0, 1.25, 1.65]
         )
-        state_multiplier = float(multipliers[demand_state])
+        calibrated_multiplier = float(multipliers[demand_state])
+        state_multiplier = max(
+            1e-6,
+            1.0 + (calibrated_multiplier - 1.0) * self.demand_shock_scale,
+        )
         hidden = math.exp(
             0.15 * self.hidden_confounding_strength * float(manager_alarm)
         )
