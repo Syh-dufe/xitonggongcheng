@@ -41,7 +41,6 @@ SELECTION_WEIGHTS = {
 RESOURCE_COLUMNS = (
     "regular_agents",
     "specialist_agents",
-    "supervisor_emergency_agents",
     "cross_skill_efficiency",
 )
 
@@ -53,14 +52,12 @@ class ResourceCandidate:
     name: str
     regular_agents: int
     specialist_agents: int
-    supervisor_emergency_agents: int = 1
     cross_skill_efficiency: float = 0.75
 
     def resource_overrides(self) -> dict[str, int | float]:
         return {
             "regular_agents": self.regular_agents,
             "specialist_agents": self.specialist_agents,
-            "supervisor_emergency_agents": self.supervisor_emergency_agents,
             "cross_skill_efficiency": self.cross_skill_efficiency,
         }
 
@@ -76,13 +73,21 @@ def load_candidates(path: str | Path) -> tuple[ResourceCandidate, ...]:
         raise ValueError("candidates must be a nonempty list")
     if not all(isinstance(row, dict) for row in rows):
         raise ValueError("each candidate must be a mapping")
+    supported_fields = {
+        "name", "regular_agents", "specialist_agents", "cross_skill_efficiency",
+    }
+    unsupported_fields = {
+        field for row in rows for field in row if field not in supported_fields
+    }
+    if unsupported_fields:
+        raise ValueError(
+            "unsupported candidate fields: " + ", ".join(sorted(unsupported_fields))
+        )
 
     candidates = tuple(ResourceCandidate(**row) for row in rows)
     if len({item.name for item in candidates}) != len(candidates):
         raise ValueError("candidate names must be unique")
     for candidate in candidates:
-        if candidate.supervisor_emergency_agents < 0:
-            raise ValueError("supervisor_emergency_agents must be nonnegative")
         SimulationConfig.default().with_overrides(
             resources=candidate.resource_overrides()
         )

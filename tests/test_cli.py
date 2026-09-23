@@ -73,7 +73,6 @@ def test_validate_capacity_writes_factual_reports_and_manifest(tmp_path):
         "  - name: baseline\n"
         "    regular_agents: 8\n"
         "    specialist_agents: 5\n"
-        "    supervisor_emergency_agents: 1\n"
         "    cross_skill_efficiency: 0.75\n",
         encoding="utf-8",
     )
@@ -91,9 +90,9 @@ def test_validate_capacity_writes_factual_reports_and_manifest(tmp_path):
     runs = pd.read_csv(output / "candidate_validation_runs.csv")
     assert {
         "candidate", "seed", "metric", "service_class", "real", "simulated", "error",
-        "regular_agents", "specialist_agents", "supervisor_emergency_agents",
-        "cross_skill_efficiency",
+        "regular_agents", "specialist_agents", "cross_skill_efficiency",
     }.issubset(runs.columns)
+    assert "supervisor_emergency_agents" not in runs.columns
     assert not any("oracle" in column or "potential_" in column for column in runs.columns)
     manifest = json.loads(
         (output / "candidate_validation_manifest.json").read_text(encoding="utf-8")

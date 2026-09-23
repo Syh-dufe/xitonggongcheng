@@ -6,6 +6,8 @@
 
 **Architecture:** A new capacity_validation.py module owns candidate-grid parsing, factual-only simulation, metric aggregation, and report writing. It uses the existing demand process, historical behavior policy, and queueing kernel but never calls evaluate_actions, generate_dataset, or Oracle policy evaluation. The CLI validates a YAML grid against processed calibration artifacts.
 
+**Implementation correction:** `supervisor_emergency_agents` remains a future-facing general configuration field, but the current queueing kernel does not consume it. Candidate calibration therefore varies and reports only regular-agent count, specialist-agent count, and cross-skill efficiency; candidate YAML that includes the unused field is rejected.
+
 **Tech Stack:** Python 3.11+, dataclasses, NumPy, pandas, PyYAML, pytest.
 
 ---
@@ -54,14 +56,12 @@ class ResourceCandidate:
     name: str
     regular_agents: int
     specialist_agents: int
-    supervisor_emergency_agents: int = 1
     cross_skill_efficiency: float = 0.75
 
     def resource_overrides(self) -> dict[str, int | float]:
         return {
             "regular_agents": self.regular_agents,
             "specialist_agents": self.specialist_agents,
-            "supervisor_emergency_agents": self.supervisor_emergency_agents,
             "cross_skill_efficiency": self.cross_skill_efficiency,
         }
 
@@ -227,14 +227,14 @@ def test_validate_capacity_writes_factual_reports(tmp_path):
     assert main(["calibrate", "--raw-dir", str(FIXTURE_DIR), "--output", str(calibration)]) == 0
     config = tmp_path / "config.yaml"
     config.write_text(
-        f"calibration_path: {calibration / 'calibration_parameters.json'}\nperiods_per_day: 4\n",
+        f"calibration_path: {calibration / 'calibration_parameters.json'}\n",
         encoding="utf-8",
     )
     candidates = tmp_path / "candidates.yaml"
     candidates.write_text(
         "candidates:\n"
         "  - name: baseline\n    regular_agents: 8\n    specialist_agents: 5\n"
-        "    supervisor_emergency_agents: 1\n    cross_skill_efficiency: 0.75\n",
+        "    cross_skill_efficiency: 0.75\n",
         encoding="utf-8",
     )
     output = tmp_path / "validation"
@@ -260,7 +260,7 @@ Expected: FAIL because validate-capacity is not a recognised command.
 Add parser arguments --config Path, --candidates Path, --days int, --seeds int nargs="+", and --output Path. Dispatch to _validate_capacity. It must reuse the calibration manifest hash check, invoke the factual-only runner for every candidate/seed pair, call compare_real_and_simulated with validation intervals, and add candidate value/seed columns to every metric row.
 
 Write:
-- candidate_validation_runs.csv: candidate, seed, metric, service_class, real, simulated, error plus four resource values;
+- candidate_validation_runs.csv: candidate, seed, metric, service_class, real, simulated, error plus three implemented resource values;
 - candidate_validation_summary.csv: ranked summary;
 - candidate_validation_manifest.json: command, config, calibration hash, candidate YAML SHA-256, candidate values, days, seeds, selection weights, package/Python/platform/Git metadata, and counterfactual_data_used false.
 
@@ -273,22 +273,18 @@ candidates:
   - name: baseline_8_regular_5_specialist
     regular_agents: 8
     specialist_agents: 5
-    supervisor_emergency_agents: 1
     cross_skill_efficiency: 0.75
   - name: lean_7_regular_4_specialist
     regular_agents: 7
     specialist_agents: 4
-    supervisor_emergency_agents: 1
     cross_skill_efficiency: 0.65
   - name: flexible_8_regular_5_specialist
     regular_agents: 8
     specialist_agents: 5
-    supervisor_emergency_agents: 1
     cross_skill_efficiency: 0.90
   - name: resilient_9_regular_6_specialist
     regular_agents: 9
     specialist_agents: 6
-    supervisor_emergency_agents: 2
     cross_skill_efficiency: 0.75
 ~~~
 
@@ -351,4 +347,3 @@ Append command metadata, test result, selected baseline name, and limitations to
 Run:
 git add runs.md
 git commit -m "docs: record capacity validation smoke run"
-

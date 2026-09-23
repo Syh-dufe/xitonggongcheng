@@ -27,6 +27,21 @@ def test_candidate_grid_rejects_duplicate_names(tmp_path):
         load_candidates(path)
 
 
+def test_candidate_grid_rejects_unimplemented_emergency_agent_dimension(tmp_path):
+    path = tmp_path / "candidates.yaml"
+    path.write_text(
+        "candidates:\n"
+        "  - name: baseline\n"
+        "    regular_agents: 8\n"
+        "    specialist_agents: 5\n"
+        "    supervisor_emergency_agents: 1\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unsupported candidate fields"):
+        load_candidates(path)
+
+
 def _parameters(periods_per_day: int) -> dict:
     service_classes = ("regular", "specialist", "callback_special")
     arrival = {
@@ -129,7 +144,6 @@ def test_summary_averages_classes_before_predeclared_metric_weights():
     resource_values = {
         "regular_agents": 8,
         "specialist_agents": 5,
-        "supervisor_emergency_agents": 1,
         "cross_skill_efficiency": 0.75,
     }
     for candidate, seed_errors in {
@@ -166,8 +180,8 @@ def test_summary_averages_classes_before_predeclared_metric_weights():
     assert lower["rank"] == 1
     assert lower["regular_agents"] == 8
     assert lower["specialist_agents"] == 5
-    assert lower["supervisor_emergency_agents"] == 1
     assert lower["cross_skill_efficiency"] == 0.75
+    assert "supervisor_emergency_agents" not in summary.columns
 
 
 def test_summary_rejects_resource_values_that_are_not_fixed_per_candidate():
@@ -180,7 +194,6 @@ def test_summary_rejects_resource_values_that_are_not_fixed_per_candidate():
             "error": 0.1,
             "regular_agents": 8,
             "specialist_agents": 5,
-            "supervisor_emergency_agents": 1,
             "cross_skill_efficiency": 0.75,
         }
         for metric in SELECTION_WEIGHTS
