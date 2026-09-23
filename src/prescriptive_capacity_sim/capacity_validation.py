@@ -33,6 +33,19 @@ WEEKDAYS = (
 )
 
 
+SELECTION_WEIGHTS = {
+    "abandonment_rate_error": 0.4,
+    "mean_wait_relative_error": 0.4,
+    "overall_p90_wait_relative_error": 0.2,
+}
+RESOURCE_COLUMNS = (
+    "regular_agents",
+    "specialist_agents",
+    "supervisor_emergency_agents",
+    "cross_skill_efficiency",
+)
+
+
 @dataclass(frozen=True)
 class ResourceCandidate:
     """A transparent, semisynthetic resource scenario."""
@@ -74,6 +87,61 @@ def load_candidates(path: str | Path) -> tuple[ResourceCandidate, ...]:
             resources=candidate.resource_overrides()
         )
     return candidates
+
+
+def summarize_candidates(runs: pd.DataFrame) -> pd.DataFrame:
+    """Rank candidates by their predeclared held-out operational error score."""
+
+    summary_columns = [
+        "candidate",
+        "selection_score",
+        "selection_score_std",
+        "seed_count",
+        "rank",
+    ]
+    if set(RESOURCE_COLUMNS).issubset(runs.columns):
+        summary_columns.extend(RESOURCE_COLUMNS)
+    if runs.empty:
+        return pd.DataFrame(columns=summary_columns)
+
+    required_columns = {"candidate", "seed", "metric", "service_class", "error"}
+    missing_columns = required_columns.difference(runs.columns)
+    if missing_columns:
+        raise ValueError(
+            "runs missing required columns: "
+            + ", ".join(sorted(missing_columns))
+        )
+
+    operational = runs.loc[runs["metric"].isin(SELECTION_WEIGHTS)]
+    metric_averages = operational.groupby(
+        ["candidate", "seed", "metric"], as_index=False, sort=False
+    )["error"].mean()
+    score_inputs = metric_averages.pivot(
+        index=["candidate", "seed"], columns="metric", values="error"
+    ).reindex(columns=SELECTION_WEIGHTS)
+    if score_inputs.isna().any().any():
+        raise ValueError("each candidate and seed must contain every scored metric")
+    scores = score_inputs.mul(pd.Series(SELECTION_WEIGHTS)).sum(axis=1).rename(
+        "selection_score"
+    )
+    summary = scores.groupby(level="candidate").agg(
+        selection_score="mean",
+        selection_score_std=lambda values: values.std(ddof=0),
+        seed_count="count",
+    ).reset_index()
+    summary["seed_count"] = summary["seed_count"].astype(int)
+
+    if set(RESOURCE_COLUMNS).issubset(runs.columns):
+        resource_values = runs.groupby("candidate", as_index=False)[
+            list(RESOURCE_COLUMNS)
+        ].first()
+        summary = summary.merge(resource_values, on="candidate", how="left")
+
+    summary = summary.sort_values(
+        ["selection_score", "candidate"], kind="stable"
+    ).reset_index(drop=True)
+    summary["rank"] = np.arange(1, len(summary) + 1, dtype=int)
+    return summary[summary_columns]
 
 
 def simulate_historical_periods(

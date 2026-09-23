@@ -69,6 +69,18 @@ def compare_real_and_simulated(
         ].mean())
         _append(rows, "mean_wait_relative_error", service_class, real_wait, sim_wait,
                 relative=True)
+    real_p90_wait = _positive_wait_p90_minutes(real_calls)
+    simulated_p90_wait = _p90_or_zero(
+        simulated_log.get("p95_wait_minutes", pd.Series(dtype=float))
+    )
+    _append(
+        rows,
+        "overall_p90_wait_relative_error",
+        "overall",
+        real_p90_wait,
+        simulated_p90_wait,
+        relative=True,
+    )
     return pd.DataFrame(rows)
 
 
@@ -108,3 +120,17 @@ def _append(
         "simulated": simulated,
         "error": float(error),
     })
+
+
+def _positive_wait_p90_minutes(real_calls: pd.DataFrame | None) -> float:
+    if real_calls is None or real_calls.empty or "queue_seconds" not in real_calls:
+        return 0.0
+    positive_waits = real_calls.loc[
+        real_calls["queue_seconds"].gt(0), "queue_seconds"
+    ]
+    return _p90_or_zero(positive_waits) / 60.0
+
+
+def _p90_or_zero(values: pd.Series | np.ndarray) -> float:
+    array = np.asarray(values, dtype=float)
+    return float(np.percentile(array, 90)) if len(array) else 0.0

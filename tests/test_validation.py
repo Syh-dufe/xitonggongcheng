@@ -29,7 +29,9 @@ def test_validation_reports_required_metrics_for_each_class():
     assert {"arrival_mae", "service_wasserstein", "abandonment_rate_error"}.issubset(
         set(report["metric"])
     )
-    assert set(report["service_class"]) == {"regular", "specialist", "callback_special"}
+    assert set(report["service_class"]) == {
+        "regular", "specialist", "callback_special", "overall"
+    }
 
 
 def test_arrival_validation_includes_real_zero_intervals():
@@ -63,3 +65,67 @@ def test_arrival_validation_includes_real_zero_intervals():
     assert row["real"] == 5.0
     assert row["simulated"] == 5.0
     assert row["error"] == 0.0
+
+
+def test_validation_reports_overall_p90_wait_error_from_positive_waits():
+    real_intervals = pd.DataFrame({
+        "service_class": ["regular", "specialist", "callback_special"],
+        "arrivals": [1, 1, 1],
+        "abandoned": [0, 0, 0],
+        "mean_queue_seconds": [0.0, 0.0, 0.0],
+    })
+    simulated = pd.DataFrame({
+        "arrival_regular": [1, 1], "arrival_specialist": [1, 1],
+        "arrival_callback_special": [1, 1], "abandoned_regular": [0, 0],
+        "abandoned_specialist": [0, 0], "abandoned_callback_special": [0, 0],
+        "mean_wait_minutes": [0.0, 0.0], "p95_wait_minutes": [3.0, 3.0],
+    })
+    real_calls = pd.DataFrame({
+        "service_class": ["regular", "specialist", "callback_special"],
+        "service_seconds": [60.0, 60.0, 60.0],
+        "queue_seconds": [120.0, 0.0, 120.0],
+    })
+    params = {"empirical": {"service_seconds": {
+        "regular": [60.0], "specialist": [60.0], "callback_special": [60.0],
+    }}}
+
+    report = compare_real_and_simulated(
+        real_intervals, simulated, real_calls, params
+    )
+
+    row = report.loc[
+        report["metric"].eq("overall_p90_wait_relative_error")
+    ].iloc[0]
+    assert row["service_class"] == "overall"
+    assert row["real"] == 2.0
+    assert row["simulated"] == 3.0
+    assert row["error"] == 0.5
+
+
+def test_validation_reports_zero_overall_p90_wait_error_for_empty_waits():
+    real_intervals = pd.DataFrame({
+        "service_class": ["regular", "specialist", "callback_special"],
+        "arrivals": [0, 0, 0], "abandoned": [0, 0, 0],
+        "mean_queue_seconds": [0.0, 0.0, 0.0],
+    })
+    simulated = pd.DataFrame({
+        "arrival_regular": [], "arrival_specialist": [],
+        "arrival_callback_special": [], "abandoned_regular": [],
+        "abandoned_specialist": [], "abandoned_callback_special": [],
+        "mean_wait_minutes": [], "p95_wait_minutes": [],
+    })
+    real_calls = pd.DataFrame({
+        "service_class": [], "service_seconds": [], "queue_seconds": [],
+    })
+    params = {"empirical": {"service_seconds": {
+        "regular": [60.0], "specialist": [60.0], "callback_special": [60.0],
+    }}}
+
+    report = compare_real_and_simulated(
+        real_intervals, simulated, real_calls, params
+    )
+
+    row = report.loc[
+        report["metric"].eq("overall_p90_wait_relative_error")
+    ].iloc[0]
+    assert row[["real", "simulated", "error"]].tolist() == [0.0, 0.0, 0.0]

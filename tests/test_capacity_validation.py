@@ -1,8 +1,11 @@
+import pandas as pd
 import pytest
 
 from prescriptive_capacity_sim.capacity_validation import (
+    SELECTION_WEIGHTS,
     load_candidates,
     simulate_historical_periods,
+    summarize_candidates,
 )
 from prescriptive_capacity_sim.config import SimulationConfig
 
@@ -113,3 +116,49 @@ def test_factual_runner_rejects_incompatible_time_grids(
 ):
     with pytest.raises(ValueError, match=message):
         simulate_historical_periods(config, parameters, days=1, seed=23)
+
+
+def test_summary_averages_classes_before_predeclared_metric_weights():
+    rows = []
+    resource_values = {
+        "regular_agents": 8,
+        "specialist_agents": 5,
+        "supervisor_emergency_agents": 1,
+        "cross_skill_efficiency": 0.75,
+    }
+    for candidate, seed_errors in {
+        "higher": {11: (0.3, 0.5), 13: (0.5, 0.7)},
+        "lower": {11: (0.1, 0.3), 13: (0.3, 0.5)},
+    }.items():
+        for seed, class_errors in seed_errors.items():
+            for metric in SELECTION_WEIGHTS:
+                for service_class, error in zip(("regular", "specialist"), class_errors):
+                    rows.append({
+                        "candidate": candidate,
+                        "seed": seed,
+                        "metric": metric,
+                        "service_class": service_class,
+                        "error": error,
+                        **resource_values,
+                    })
+            rows.append({
+                "candidate": candidate,
+                "seed": seed,
+                "metric": "arrival_mae",
+                "service_class": "regular",
+                "error": 99.0,
+                **resource_values,
+            })
+
+    summary = summarize_candidates(pd.DataFrame(rows))
+
+    assert summary["candidate"].tolist() == ["lower", "higher"]
+    lower = summary.iloc[0]
+    assert lower["selection_score"] == pytest.approx(0.3)
+    assert lower["selection_score_std"] == pytest.approx(0.1)
+    assert lower["seed_count"] == 2
+    assert lower["rank"] == 1
+    assert lower["regular_agents"] == 8
+    assert lower["specialist_agents"] == 5
+    assert lower["supervisor_emergency_agents"] == 1
+    assert lower["cross_skill_efficiency"] == 0.75
