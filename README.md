@@ -51,6 +51,21 @@ uv run python -m prescriptive_capacity_sim.cli calibrate `
 - `data_quality_report.json`：异常、排除和IVR阶段流失计数；
 - `calibration_manifest.json`：输入文件哈希和参数哈希。
 
+## 验证产能候选情景
+
+```powershell
+uv run python -m prescriptive_capacity_sim.cli validate-capacity `
+  --config configs/baseline.yaml `
+  --candidates configs/capacity_candidates.yaml `
+  --days 90 `
+  --seeds 20260921 20260922 20260923 `
+  --output outputs/capacity_validation
+```
+
+该命令仅运行历史管理者实际选择的一项增援行动，不读取 Oracle 或潜在结果文件。它以留出期的业务到达、放弃与等待诊断比较候选资源情景，并预先固定选择得分：放弃率误差权重 40%、平均等待时间相对误差权重 40%、总体正等待 p90 误差权重 20%。
+
+命令会输出候选—随机种子层面的诊断、候选排序和运行清单。若运行天数与留出期日期数不相同，清单会明确记录留出期星期序列被循环或截断；因此不会错误地把这类运行称为逐日严格对齐。`configs/capacity_candidates.yaml` 中的坐席规模、备用人员和跨技能效率均是透明的半合成情景值，用于选择基准情景与开展敏感性分析，**不是**从企业历史日志中恢复的真实排班。
+
 ## 生成观测日志与反事实
 
 ```powershell
