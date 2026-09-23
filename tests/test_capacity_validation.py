@@ -69,6 +69,12 @@ def test_factual_runner_is_reproducible_and_excludes_oracle_columns():
     assert not any(
         "potential_" in column or "oracle" in column for column in left.columns
     )
+    assert {
+        "exit_wait_regular",
+        "exit_wait_specialist",
+        "exit_wait_callback_special",
+    }.issubset(left.columns)
+    assert all(isinstance(value, tuple) for value in left["exit_wait_regular"])
 
 
 def test_factual_runner_uses_explicit_validation_weekdays():

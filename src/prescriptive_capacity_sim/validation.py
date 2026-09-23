@@ -63,15 +63,22 @@ def compare_real_and_simulated(
             real_wait = float(np.mean(real_wait_values) / 60.0) if len(real_wait_values) else 0.0
         else:
             real_wait = float(real["mean_queue_seconds"].mean() / 60.0) if len(real) else 0.0
-        class_wait_column = f"mean_wait_{service_class}"
-        sim_wait = float(simulated_log[
-            class_wait_column if class_wait_column in simulated_log else "mean_wait_minutes"
-        ].mean())
+        pooled_waits = _simulated_exit_waits(simulated_log, (service_class,))
+        if pooled_waits is not None:
+            sim_wait = _mean_or_zero(pooled_waits)
+        else:
+            class_wait_column = f"mean_wait_{service_class}"
+            sim_wait = float(simulated_log[
+                class_wait_column if class_wait_column in simulated_log else "mean_wait_minutes"
+            ].mean())
         _append(rows, "mean_wait_relative_error", service_class, real_wait, sim_wait,
                 relative=True)
     real_p90_wait = _positive_wait_p90_minutes(real_calls)
-    simulated_p90_wait = _p90_or_zero(
-        simulated_log.get("p95_wait_minutes", pd.Series(dtype=float))
+    pooled_waits = _simulated_exit_waits(simulated_log, SERVICE_CLASSES)
+    simulated_p90_wait = (
+        _p90_or_zero(pooled_waits)
+        if pooled_waits is not None
+        else _p90_or_zero(simulated_log.get("p95_wait_minutes", pd.Series(dtype=float)))
     )
     _append(
         rows,
@@ -132,6 +139,31 @@ def _positive_wait_p90_minutes(real_calls: pd.DataFrame | None) -> float:
 
 
 def _p90_or_zero(values: pd.Series | np.ndarray) -> float:
-    array = np.asarray(values, dtype=float)
-    array = array[np.isfinite(array)]
+    array = _finite_values(values)
     return float(np.percentile(array, 90)) if len(array) else 0.0
+
+
+def _mean_or_zero(values: pd.Series | np.ndarray) -> float:
+    array = _finite_values(values)
+    return float(np.mean(array)) if len(array) else 0.0
+
+
+def _finite_values(values: pd.Series | np.ndarray) -> np.ndarray:
+    array = np.asarray(values, dtype=float).reshape(-1)
+    return array[np.isfinite(array)]
+
+
+def _simulated_exit_waits(
+    simulated_log: pd.DataFrame,
+    service_classes: tuple[str, ...],
+) -> np.ndarray | None:
+    columns = [f"exit_wait_{service_class}" for service_class in service_classes]
+    if not all(column in simulated_log for column in columns):
+        return None
+    values: list[float] = []
+    for column in columns:
+        for exit_waits in simulated_log[column]:
+            if exit_waits is None:
+                continue
+            values.extend(np.asarray(exit_waits, dtype=float).reshape(-1))
+    return np.asarray(values, dtype=float)

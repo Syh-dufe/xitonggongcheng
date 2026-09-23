@@ -90,20 +90,25 @@ class CallCenterEnvironment:
         served_nonpriority = tuple(
             served_counts[i] - served_priority[i] for i in range(3)
         )
-        wait_observations = [
-            call.intraperiod_wait_minutes
-            + call.waited_periods * resource.minutes_per_period
-            for call in (*served_calls, *abandoned_calls)
-        ]
-        mean_wait = float(np.mean(wait_observations)) if wait_observations else 0.0
         exit_calls = (*served_calls, *abandoned_calls)
-        mean_wait_by_class = tuple(
-            float(np.mean([
+        exit_wait_minutes_by_class = tuple(
+            tuple(
                 call.intraperiod_wait_minutes
                 + call.waited_periods * resource.minutes_per_period
-                for call in exit_calls if call.service_class == service_class
-            ])) if any(call.service_class == service_class for call in exit_calls) else 0.0
+                for call in exit_calls
+                if call.service_class == service_class
+            )
             for service_class in range(3)
+        )
+        wait_observations = [
+            wait
+            for waits in exit_wait_minutes_by_class
+            for wait in waits
+        ]
+        mean_wait = float(np.mean(wait_observations)) if wait_observations else 0.0
+        mean_wait_by_class = tuple(
+            float(np.mean(waits)) if waits else 0.0
+            for waits in exit_wait_minutes_by_class
         )
         p95_wait = float(np.percentile(wait_observations, 95)) if wait_observations else 0.0
         on_time = sum(
@@ -172,6 +177,7 @@ class CallCenterEnvironment:
             service_level=float(service_level),
             mean_wait_minutes=mean_wait,
             mean_wait_by_class=mean_wait_by_class,  # type: ignore[arg-type]
+            exit_wait_minutes_by_class=exit_wait_minutes_by_class,  # type: ignore[arg-type]
             p95_wait_minutes=p95_wait,
             safety_violation=safety_violation,
         )

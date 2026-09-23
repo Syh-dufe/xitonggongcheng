@@ -71,3 +71,23 @@ def test_priority_precedes_nonpriority_within_class():
     assert result.served_priority[0] == 1
     assert result.served_nonpriority[0] == 0
     assert len(result.mean_wait_by_class) == 3
+
+
+def test_transition_records_each_exiting_call_wait_by_service_class():
+    cfg = SimulationConfig.default().with_overrides(
+        resources={"regular_agents": 1, "specialist_agents": 0,
+                   "minutes_per_period": 1}
+    )
+    env = CallCenterEnvironment(cfg)
+    state = SystemState(
+        episode_id=0,
+        period=0,
+        weekday="monday",
+        demand_state=0,
+        waiting=(QueuedCall(0, False, 1.0, 2, 1, 0.5),),
+    )
+    draw = _draw(QueuedCall(0, False, 1.0, 1, 0, 0.25))
+
+    result = env.transition(state, 0, draw)
+
+    assert result.exit_wait_minutes_by_class == ((1.5, 0.25), (), ())

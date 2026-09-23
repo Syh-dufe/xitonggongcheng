@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import pytest
 
 from prescriptive_capacity_sim.validation import compare_real_and_simulated
 
@@ -162,3 +163,48 @@ def test_validation_ignores_nonfinite_values_in_overall_p90_wait_error():
         report["metric"].eq("overall_p90_wait_relative_error")
     ].iloc[0]
     assert row[["real", "simulated", "error"]].tolist() == [2.0, 3.0, 0.5]
+
+
+def test_validation_pools_exit_waits_across_uneven_period_exit_counts():
+    real_intervals = pd.DataFrame({
+        "service_class": ["regular", "specialist", "callback_special"],
+        "arrivals": [101, 1, 1], "abandoned": [0, 0, 0],
+        "mean_queue_seconds": [60.0, 60.0, 60.0],
+    })
+    simulated = pd.DataFrame({
+        "arrival_regular": [100, 1], "arrival_specialist": [1, 0],
+        "arrival_callback_special": [1, 0], "abandoned_regular": [0, 0],
+        "abandoned_specialist": [0, 0], "abandoned_callback_special": [0, 0],
+        "mean_wait_minutes": [1.0, 9.0],
+        "mean_wait_regular": [1.0, 9.0],
+        "mean_wait_specialist": [0.0, 0.0],
+        "mean_wait_callback_special": [0.0, 0.0],
+        "p95_wait_minutes": [99.0, 99.0],
+        "exit_wait_regular": [(1.0,) * 100, (9.0,)],
+        "exit_wait_specialist": [(1.0,), ()],
+        "exit_wait_callback_special": [(1.0,), ()],
+    })
+    real_calls = pd.DataFrame({
+        "service_class": ["regular", "specialist", "callback_special"],
+        "service_seconds": [60.0, 60.0, 60.0],
+        "queue_seconds": [60.0, 60.0, 60.0],
+    })
+    params = {"empirical": {"service_seconds": {
+        "regular": [60.0], "specialist": [60.0], "callback_special": [60.0],
+    }}}
+
+    report = compare_real_and_simulated(
+        real_intervals, simulated, real_calls, params
+    )
+
+    regular = report.loc[
+        report["metric"].eq("mean_wait_relative_error")
+        & report["service_class"].eq("regular")
+    ].iloc[0]
+    overall = report.loc[
+        report["metric"].eq("overall_p90_wait_relative_error")
+    ].iloc[0]
+    assert regular["simulated"] == pytest.approx(109.0 / 101.0)
+    assert regular["simulated"] != pytest.approx(5.0)
+    assert overall["simulated"] == 1.0
+    assert overall["simulated"] != 99.0
