@@ -7,7 +7,9 @@ not generate potential outcomes or use an oracle evaluator.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -80,14 +82,18 @@ def simulate_historical_periods(
     *,
     days: int,
     seed: int,
+    weekdays: Sequence[str] | None = None,
 ) -> pd.DataFrame:
     """Simulate factual historical actions and their realized period outcomes."""
 
     if days <= 0:
         raise ValueError("days must be positive")
+    parameter_values = _load_parameter_values(parameters)
+    _validate_time_grid(config, parameter_values)
+    episode_weekdays = _episode_weekdays(days, weekdays)
 
     demand = CalibratedDemandProcess(
-        parameters,
+        parameter_values,
         hidden_confounding_strength=config.behavior.hidden_confounding_strength,
         demand_shock_scale=config.demand_shock_scale,
     )
@@ -96,7 +102,7 @@ def simulate_historical_periods(
     rows: list[dict[str, int | float | bool | str]] = []
 
     for episode_id in range(days):
-        weekday = WEEKDAYS[episode_id % len(WEEKDAYS)]
+        weekday = episode_weekdays[episode_id]
         environment_rng = np.random.default_rng(
             np.random.SeedSequence([seed, episode_id, 0])
         )
@@ -114,6 +120,36 @@ def simulate_historical_periods(
             state = result.next_state
 
     return pd.DataFrame(rows)
+
+
+def _load_parameter_values(parameters: dict | str | Path) -> dict:
+    if isinstance(parameters, (str, Path)):
+        parameters = json.loads(Path(parameters).read_text(encoding="utf-8"))
+    if not isinstance(parameters, dict):
+        raise ValueError("calibration parameters must be a mapping")
+    return parameters
+
+
+def _validate_time_grid(config: SimulationConfig, parameters: dict) -> None:
+    if parameters.get("periods_per_day") != config.periods_per_day:
+        raise ValueError(
+            "config periods_per_day must match calibration parameters periods_per_day"
+        )
+    if parameters.get("period_minutes") != config.resources.minutes_per_period:
+        raise ValueError(
+            "config minutes_per_period must match calibration parameters period_minutes"
+        )
+
+
+def _episode_weekdays(
+    days: int,
+    weekdays: Sequence[str] | None,
+) -> tuple[str, ...]:
+    if weekdays is None:
+        return tuple(WEEKDAYS[episode_id % len(WEEKDAYS)] for episode_id in range(days))
+    if isinstance(weekdays, str) or len(weekdays) != days:
+        raise ValueError("weekdays length must equal days")
+    return tuple(str(weekday).lower() for weekday in weekdays)
 
 
 def _factual_row(

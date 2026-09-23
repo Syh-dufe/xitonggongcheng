@@ -66,3 +66,50 @@ def test_factual_runner_is_reproducible_and_excludes_oracle_columns():
     assert not any(
         "potential_" in column or "oracle" in column for column in left.columns
     )
+
+
+def test_factual_runner_uses_explicit_validation_weekdays():
+    config = SimulationConfig.default().with_overrides(periods_per_day=1)
+    parameters = _parameters(periods_per_day=1)
+
+    observed = simulate_historical_periods(
+        config,
+        parameters,
+        days=2,
+        seed=23,
+        weekdays=("thursday", "friday"),
+    )
+
+    assert observed["weekday"].tolist() == ["thursday", "friday"]
+    with pytest.raises(ValueError, match="length"):
+        simulate_historical_periods(
+            config,
+            parameters,
+            days=2,
+            seed=23,
+            weekdays=("thursday",),
+        )
+
+
+@pytest.mark.parametrize(
+    ("config", "parameters", "message"),
+    [
+        (
+            SimulationConfig.default().with_overrides(periods_per_day=2),
+            _parameters(periods_per_day=3),
+            "periods_per_day",
+        ),
+        (
+            SimulationConfig.default().with_overrides(
+                resources={"minutes_per_period": 15}
+            ),
+            _parameters(periods_per_day=48),
+            "period_minutes",
+        ),
+    ],
+)
+def test_factual_runner_rejects_incompatible_time_grids(
+    config, parameters, message
+):
+    with pytest.raises(ValueError, match=message):
+        simulate_historical_periods(config, parameters, days=1, seed=23)
