@@ -40,6 +40,12 @@ def test_generate_cli_writes_six_artifacts_and_manifest(tmp_path):
         "episode_summary.csv", "policy_metrics.csv",
         "simulation_validation.csv", "run_manifest.json",
     }
+    observed = pd.read_csv(output / "observed_log.csv")
+    assert {
+        "exit_wait_regular",
+        "exit_wait_specialist",
+        "exit_wait_callback_special",
+    }.issubset(observed.columns)
 
 
 def test_cli_csv_outputs_never_contain_identifiers(tmp_path):

@@ -149,6 +149,9 @@ def _observed_row(
         "mean_wait_regular": result.mean_wait_by_class[0],
         "mean_wait_specialist": result.mean_wait_by_class[1],
         "mean_wait_callback_special": result.mean_wait_by_class[2],
+        "exit_wait_regular": result.exit_wait_minutes_by_class[0],
+        "exit_wait_specialist": result.exit_wait_minutes_by_class[1],
+        "exit_wait_callback_special": result.exit_wait_minutes_by_class[2],
         "p95_wait_minutes": result.p95_wait_minutes,
         "safety_violation": result.safety_violation,
     }

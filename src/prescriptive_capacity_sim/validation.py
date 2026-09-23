@@ -76,7 +76,7 @@ def compare_real_and_simulated(
     real_p90_wait = _positive_wait_p90_minutes(real_calls)
     pooled_waits = _simulated_exit_waits(simulated_log, SERVICE_CLASSES)
     simulated_p90_wait = (
-        _p90_or_zero(pooled_waits)
+        _positive_p90_or_zero(pooled_waits)
         if pooled_waits is not None
         else _p90_or_zero(simulated_log.get("p95_wait_minutes", pd.Series(dtype=float)))
     )
@@ -132,14 +132,17 @@ def _append(
 def _positive_wait_p90_minutes(real_calls: pd.DataFrame | None) -> float:
     if real_calls is None or real_calls.empty or "queue_seconds" not in real_calls:
         return 0.0
-    positive_waits = real_calls.loc[
-        real_calls["queue_seconds"].gt(0), "queue_seconds"
-    ]
-    return _p90_or_zero(positive_waits) / 60.0
+    return _positive_p90_or_zero(real_calls["queue_seconds"]) / 60.0
 
 
 def _p90_or_zero(values: pd.Series | np.ndarray) -> float:
     array = _finite_values(values)
+    return float(np.percentile(array, 90)) if len(array) else 0.0
+
+
+def _positive_p90_or_zero(values: pd.Series | np.ndarray) -> float:
+    array = _finite_values(values)
+    array = array[array > 0]
     return float(np.percentile(array, 90)) if len(array) else 0.0
 
 

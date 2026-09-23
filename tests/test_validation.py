@@ -208,3 +208,37 @@ def test_validation_pools_exit_waits_across_uneven_period_exit_counts():
     assert regular["simulated"] != pytest.approx(5.0)
     assert overall["simulated"] == 1.0
     assert overall["simulated"] != 99.0
+
+
+def test_validation_excludes_zero_exit_waits_from_exact_simulated_p90():
+    real_intervals = pd.DataFrame({
+        "service_class": ["regular", "specialist", "callback_special"],
+        "arrivals": [102, 0, 0], "abandoned": [0, 0, 0],
+        "mean_queue_seconds": [0.0, 0.0, 0.0],
+    })
+    simulated = pd.DataFrame({
+        "arrival_regular": [102], "arrival_specialist": [0],
+        "arrival_callback_special": [0], "abandoned_regular": [0],
+        "abandoned_specialist": [0], "abandoned_callback_special": [0],
+        "mean_wait_minutes": [0.0], "p95_wait_minutes": [99.0],
+        "exit_wait_regular": [(0.0,) * 100 + (5.0, 10.0)],
+        "exit_wait_specialist": [()],
+        "exit_wait_callback_special": [()],
+    })
+    real_calls = pd.DataFrame({
+        "service_class": ["regular", "regular"],
+        "service_seconds": [60.0, 60.0],
+        "queue_seconds": [300.0, 600.0],
+    })
+    params = {"empirical": {"service_seconds": {
+        "regular": [60.0], "specialist": [60.0], "callback_special": [60.0],
+    }}}
+
+    report = compare_real_and_simulated(
+        real_intervals, simulated, real_calls, params
+    )
+
+    overall = report.loc[
+        report["metric"].eq("overall_p90_wait_relative_error")
+    ].iloc[0]
+    assert overall[["real", "simulated", "error"]].tolist() == [9.5, 9.5, 0.0]
