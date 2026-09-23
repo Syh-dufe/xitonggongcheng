@@ -49,6 +49,7 @@ uv run python -m prescriptive_capacity_sim.cli calibrate `
 - `calibration_intervals.csv`：脱敏的训练期与留出期半小时汇总；
 - `calibration_parameters.json`：训练期估计参数；
 - `data_quality_report.json`：异常、排除和IVR阶段流失计数；
+- `validation_reference_calls.csv`：仅含业务类别、排队秒数和服务秒数的逐通话脱敏留出期诊断表；
 - `calibration_manifest.json`：输入文件哈希和参数哈希。
 
 ## 验证产能候选情景
@@ -62,9 +63,9 @@ uv run python -m prescriptive_capacity_sim.cli validate-capacity `
   --output outputs/capacity_validation
 ```
 
-该命令仅运行历史管理者实际选择的一项增援行动，不读取 Oracle 或潜在结果文件。它以留出期的业务到达、放弃与等待诊断比较候选资源情景，并预先固定选择得分：放弃率误差权重 40%、平均等待时间相对误差权重 40%、总体正等待 p90 误差权重 20%。
+该命令仅运行历史管理者实际选择的一项增援行动，不读取 Oracle 或潜在结果文件。它从 `validation_reference_calls.csv` 读取逐通话留出期记录，以保留不同业务的真实样本量；总体正等待 p90 因而按全部原始留出期通话计算，而不是按业务类别分位点等权重重建。预先固定的选择得分为：放弃率误差权重 40%、平均等待时间相对误差权重 40%、总体正等待 p90 误差权重 20%。队列流量守恒误差会报告为机制检查，但不参与候选排序。
 
-命令会输出候选—随机种子层面的诊断、候选排序和运行清单。若运行天数与留出期日期数不相同，清单会明确记录留出期星期序列被循环或截断；因此不会错误地把这类运行称为逐日严格对齐。`configs/capacity_candidates.yaml` 中的普通/专业坐席规模和跨技能效率均是透明的半合成情景值，用于选择基准情景与开展敏感性分析，**不是**从企业历史日志中恢复的真实排班。`supervisor_emergency_agents` 虽保留在通用仿真配置中以支持后续机制开发，但当前队列内核尚未使用它；因此它被明确排除在候选校准、报告和排序之外。
+命令会输出候选—随机种子层面的诊断、候选排序和运行清单。清单以 `validation_dates_exact`、`validation_dates_truncated` 或 `validation_dates_cycled` 明确记录运行天数与留出期日期的关系；因此不会错误地把截断或循环运行称为逐日严格对齐。`configs/capacity_candidates.yaml` 中的普通/专业坐席规模和跨技能效率均是透明的半合成情景值，用于选择基准情景与开展敏感性分析，**不是**从企业历史日志中恢复的真实排班。`supervisor_emergency_agents` 虽保留在通用仿真配置中以支持后续机制开发，但当前队列内核尚未使用它；因此它被明确排除在候选校准、报告和排序之外。
 
 ## 生成观测日志与反事实
 
@@ -82,12 +83,12 @@ uv run python -m prescriptive_capacity_sim.cli generate `
 - `oracle_counterfactuals.csv`：四种行动的潜在结果，只能用于评价；
 - `episode_summary.csv`：每日运行摘要；
 - `policy_metrics.csv`：内置策略的配对评价；
-- `simulation_validation.csv`：真实留出期与模拟分布诊断；
+- `simulation_validation.csv`：由精确逐通话留出期参考表和模拟日志计算的分布、等待与队列守恒诊断；
 - `run_manifest.json`：配置、种子、哈希、代码版本和运行环境。
 
 ## 隐私与防泄漏
 
-原始记录含客户编号和坐席标识，已通过 `.gitignore` 排除。处理后的表不会保存 `customer_id`、`server` 或原始行号。训练接口不读取Oracle文件；任何使用Oracle调参的结果都不能作为确认性实验。
+原始记录含客户编号和坐席标识，已通过 `.gitignore` 排除。处理后的表（含逐通话留出期参考表）不会保存 `customer_id`、`server` 或原始行号。训练接口不读取Oracle文件；任何使用Oracle调参的结果都不能作为确认性实验。
 
 ## 测试
 

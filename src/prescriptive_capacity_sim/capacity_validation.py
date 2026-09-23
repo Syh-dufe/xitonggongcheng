@@ -237,6 +237,12 @@ def _factual_row(
     result: PeriodResult,
     propensity: float,
 ) -> dict[str, int | float | bool | str]:
+    queue_flow_error = result.next_state.total_queue - (
+        state.total_queue
+        + sum(result.arrivals)
+        - sum(result.served)
+        - sum(result.abandoned)
+    )
     return {
         "episode_id": state.episode_id,
         "weekday": state.weekday,
@@ -260,6 +266,7 @@ def _factual_row(
         "abandoned_specialist": result.abandoned[1],
         "abandoned_callback_special": result.abandoned[2],
         "next_queue": result.next_state.total_queue,
+        "queue_flow_error": float(queue_flow_error),
         "regular_agents": result.regular_agents,
         "specialist_agents": result.specialist_agents,
         "temporary_agents": result.temporary_agents,

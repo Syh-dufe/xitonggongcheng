@@ -113,6 +113,12 @@ def _observed_row(
     probabilities: np.ndarray,
     split: str,
 ) -> dict:
+    queue_flow_error = result.next_state.total_queue - (
+        state.total_queue
+        + sum(result.arrivals)
+        - sum(result.served)
+        - sum(result.abandoned)
+    )
     row = {
         "episode_id": state.episode_id,
         "split": split,
@@ -137,6 +143,7 @@ def _observed_row(
         "abandoned_specialist": result.abandoned[1],
         "abandoned_callback_special": result.abandoned[2],
         "next_queue": result.next_state.total_queue,
+        "queue_flow_error": float(queue_flow_error),
         "temporary_agents": result.temporary_agents,
         "base_staff_cost": result.base_staff_cost,
         "augmentation_cost": result.augmentation_cost,

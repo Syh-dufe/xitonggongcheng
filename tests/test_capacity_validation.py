@@ -90,6 +90,8 @@ def test_factual_runner_is_reproducible_and_excludes_oracle_columns():
         "exit_wait_callback_special",
     }.issubset(left.columns)
     assert all(isinstance(value, tuple) for value in left["exit_wait_regular"])
+    assert "queue_flow_error" in left.columns
+    assert left["queue_flow_error"].eq(0.0).all()
 
 
 def test_factual_runner_uses_explicit_validation_weekdays():

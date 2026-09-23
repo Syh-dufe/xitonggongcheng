@@ -26,6 +26,7 @@ class CalibrationPaths:
     intervals: Path
     parameters: Path
     quality: Path
+    validation_reference: Path
     manifest: Path
 
 
@@ -111,12 +112,25 @@ def write_calibration(
         intervals=output / "calibration_intervals.csv",
         parameters=output / "calibration_parameters.json",
         quality=output / "data_quality_report.json",
+        validation_reference=output / "validation_reference_calls.csv",
         manifest=output / "calibration_manifest.json",
     )
     sources = [Path(p) for p in source_files]
     source_hashes = {
         p.name: _sha256(p) for p in sources if p.is_file() and not p.name.startswith("._")
     }
+    train_intervals = result.intervals.copy()
+    train_intervals.insert(0, "split", "train")
+    validation_intervals = result.validation_intervals.copy()
+    validation_intervals.insert(0, "split", "validation")
+    _atomic_csv(pd.concat([train_intervals, validation_intervals], ignore_index=True), paths.intervals)
+    _atomic_json(result.parameters, paths.parameters)
+    validation_reference = result.validation_calls.loc[
+        :, ["service_class", "queue_seconds", "service_seconds"]
+    ].reset_index(drop=True)
+    _atomic_csv(validation_reference, paths.validation_reference)
+    quality_payload = asdict(result.quality)
+    _atomic_json(quality_payload, paths.quality)
     manifest = {
         "schema_version": 1,
         "source_files": sorted(source_hashes),
@@ -126,24 +140,9 @@ def write_calibration(
         "training_calls": len(result.train_calls),
         "validation_calls": len(result.validation_calls),
         "parameters_sha256": _json_sha256(result.parameters),
+        "validation_reference_calls_sha256": _sha256(paths.validation_reference),
+        "validation_reference_calls_columns": list(validation_reference.columns),
     }
-    train_intervals = result.intervals.copy()
-    train_intervals.insert(0, "split", "train")
-    validation_intervals = result.validation_intervals.copy()
-    validation_intervals.insert(0, "split", "validation")
-    _atomic_csv(pd.concat([train_intervals, validation_intervals], ignore_index=True), paths.intervals)
-    _atomic_json(result.parameters, paths.parameters)
-    quality_payload = asdict(result.quality)
-    quality_payload["validation_reference"] = {
-        "service_seconds": _empirical_quantiles(
-            result.validation_calls.loc[result.validation_calls["service_seconds"].gt(0)],
-            "service_seconds",
-        ),
-        "queue_seconds": _empirical_quantiles(
-            result.validation_calls, "queue_seconds"
-        ),
-    }
-    _atomic_json(quality_payload, paths.quality)
     _atomic_json(manifest, paths.manifest)
     return paths
 

@@ -8,6 +8,8 @@
 
 **Implementation correction:** `supervisor_emergency_agents` remains a future-facing general configuration field, but the current queueing kernel does not consume it. Candidate calibration therefore varies and reports only regular-agent count, specialist-agent count, and cross-skill efficiency; candidate YAML that includes the unused field is rejected.
 
+**Audit correction:** Calibration writes a deidentified, exact held-out call table (`service_class`, `queue_seconds`, `service_seconds`) rather than reconstructing calls from per-class quantiles in the quality report. Both CLI validation paths read that table, report queue-flow conservation as a non-selection diagnostic, and distinguish exact, truncated, and cycled validation-weekday schedules in their manifests.
+
 **Tech Stack:** Python 3.11+, dataclasses, NumPy, pandas, PyYAML, pytest.
 
 ---

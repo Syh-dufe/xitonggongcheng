@@ -88,6 +88,15 @@ def compare_real_and_simulated(
         simulated_p90_wait,
         relative=True,
     )
+    flow_residuals = _queue_flow_residuals(simulated_log)
+    flow_error = _mean_or_zero(np.abs(flow_residuals))
+    _append(
+        rows,
+        "queue_flow_conservation_error",
+        "overall",
+        0.0,
+        flow_error,
+    )
     return pd.DataFrame(rows)
 
 
@@ -170,3 +179,41 @@ def _simulated_exit_waits(
                 continue
             values.extend(np.asarray(exit_waits, dtype=float).reshape(-1))
     return np.asarray(values, dtype=float)
+
+
+def _queue_flow_residuals(simulated_log: pd.DataFrame) -> np.ndarray:
+    """Return period queue-balance residuals from explicit or reconstructible fields."""
+
+    if "queue_flow_error" in simulated_log:
+        return _finite_values(simulated_log["queue_flow_error"])
+    required = {
+        "queue_regular", "queue_specialist", "queue_callback_special", "next_queue",
+        "arrival_regular", "arrival_specialist", "arrival_callback_special",
+        "served_regular", "served_specialist", "served_callback_special",
+        "abandoned_regular", "abandoned_specialist", "abandoned_callback_special",
+    }
+    if not required.issubset(simulated_log.columns):
+        return np.asarray([], dtype=float)
+    queue_before = (
+        simulated_log["queue_regular"]
+        + simulated_log["queue_specialist"]
+        + simulated_log["queue_callback_special"]
+    )
+    arrivals = (
+        simulated_log["arrival_regular"]
+        + simulated_log["arrival_specialist"]
+        + simulated_log["arrival_callback_special"]
+    )
+    served = (
+        simulated_log["served_regular"]
+        + simulated_log["served_specialist"]
+        + simulated_log["served_callback_special"]
+    )
+    abandoned = (
+        simulated_log["abandoned_regular"]
+        + simulated_log["abandoned_specialist"]
+        + simulated_log["abandoned_callback_special"]
+    )
+    return _finite_values(simulated_log["next_queue"] - (
+        queue_before + arrivals - served - abandoned
+    ))

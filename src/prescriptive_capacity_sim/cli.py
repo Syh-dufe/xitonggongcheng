@@ -101,20 +101,7 @@ def _simulate(
     interval_path = config.calibration_path.with_name("calibration_intervals.csv")
     intervals = pd.read_csv(interval_path)
     validation_intervals = intervals.loc[intervals["split"].eq("validation")]
-    quality_path = config.calibration_path.with_name("data_quality_report.json")
-    quality_report = json.loads(quality_path.read_text(encoding="utf-8"))
-    reference = quality_report["validation_reference"]
-    reference_rows = []
-    for service_class in parameters["classes"]:
-        service_values = reference["service_seconds"][service_class]
-        queue_values = reference["queue_seconds"][service_class]
-        for index in range(max(len(service_values), len(queue_values))):
-            reference_rows.append({
-                "service_class": service_class,
-                "service_seconds": service_values[index % len(service_values)],
-                "queue_seconds": queue_values[index % len(queue_values)],
-            })
-    validation_calls = pd.DataFrame(reference_rows)
+    validation_calls = _load_validation_reference_calls(config.calibration_path)
     validation = compare_real_and_simulated(
         validation_intervals, data.observed, validation_calls, parameters
     )
@@ -131,6 +118,9 @@ def _simulate(
         "config_path": str(config_path.resolve()),
         "config": _serialize_config(config),
         "calibration_parameters_sha256": parameter_hash,
+        "validation_reference_calls_sha256": calibration_manifest.get(
+            "validation_reference_calls_sha256"
+        ),
         "raw_source_sha256": calibration_manifest.get("source_sha256", {}),
         "days": days,
         "seed": seed,
@@ -169,9 +159,7 @@ def _validate_capacity(
     validation_intervals = intervals.loc[intervals["split"].eq("validation")].copy()
     if validation_intervals.empty:
         raise ValueError("calibration intervals contain no validation split")
-    quality_path = config.calibration_path.with_name("data_quality_report.json")
-    quality_report = json.loads(quality_path.read_text(encoding="utf-8"))
-    validation_calls = _validation_calls_from_quality_report(quality_report, parameters)
+    validation_calls = _load_validation_reference_calls(config.calibration_path)
     weekdays, weekday_schedule_source, validation_dates = _validation_weekday_schedule(
         validation_intervals, days
     )
@@ -211,6 +199,9 @@ def _validate_capacity(
         "config_path": str(config_path.resolve()),
         "config": _serialize_config(config),
         "calibration_parameters_sha256": parameter_hash,
+        "validation_reference_calls_sha256": calibration_manifest.get(
+            "validation_reference_calls_sha256"
+        ),
         "raw_source_sha256": calibration_manifest.get("source_sha256", {}),
         "candidate_yaml_path": str(candidates_path.resolve()),
         "candidate_yaml_sha256": _file_hash(candidates_path),
@@ -253,26 +244,19 @@ def _load_calibration_artifacts(
     return config, parameters, calibration_manifest
 
 
-def _validation_calls_from_quality_report(
-    quality_report: dict,
-    parameters: dict,
-) -> pd.DataFrame:
-    """Build identifier-free held-out call diagnostics from stored quantiles."""
+def _load_validation_reference_calls(calibration_path: Path) -> pd.DataFrame:
+    """Load the exact, deidentified held-out calls used for diagnostics."""
 
-    reference = quality_report.get("validation_reference", {})
-    rows: list[dict[str, float | str]] = []
-    for service_class in parameters["classes"]:
-        service_values = reference.get("service_seconds", {}).get(service_class, [])
-        queue_values = reference.get("queue_seconds", {}).get(service_class, [])
-        for index in range(max(len(service_values), len(queue_values))):
-            rows.append({
-                "service_class": service_class,
-                "service_seconds": float(service_values[index % len(service_values)])
-                if service_values else 0.0,
-                "queue_seconds": float(queue_values[index % len(queue_values)])
-                if queue_values else 0.0,
-            })
-    return pd.DataFrame(rows)
+    path = calibration_path.with_name("validation_reference_calls.csv")
+    if not path.is_file():
+        raise FileNotFoundError(f"validation reference calls not found: {path}")
+    frame = pd.read_csv(path)
+    expected = ["service_class", "queue_seconds", "service_seconds"]
+    if frame.columns.tolist() != expected:
+        raise ValueError(
+            "validation reference calls must contain only: " + ", ".join(expected)
+        )
+    return frame
 
 
 def _validation_weekday_schedule(
@@ -291,7 +275,9 @@ def _validation_weekday_schedule(
     if not weekday_values:
         raise ValueError("validation intervals contain no validation dates")
     if days == len(weekday_values):
-        return weekday_values, "validation_dates_aligned", date_values
+        return weekday_values, "validation_dates_exact", date_values
+    if days < len(weekday_values):
+        return weekday_values[:days], "validation_dates_truncated", date_values
     schedule = tuple(weekday_values[index % len(weekday_values)] for index in range(days))
     return schedule, "validation_dates_cycled", date_values
 
