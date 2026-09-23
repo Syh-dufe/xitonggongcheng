@@ -1,0 +1,159 @@
+"""Factual-only simulation helpers for capacity-scenario validation.
+
+This module deliberately runs exactly one historical action per period.  It does
+not generate potential outcomes or use an oracle evaluator.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import yaml
+
+from .behavior import HistoricalBehaviorPolicy
+from .config import SimulationConfig
+from .demand import CalibratedDemandProcess
+from .environment import CallCenterEnvironment
+from .state import PeriodResult, SystemState
+
+
+WEEKDAYS = (
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+)
+
+
+@dataclass(frozen=True)
+class ResourceCandidate:
+    """A transparent, semisynthetic resource scenario."""
+
+    name: str
+    regular_agents: int
+    specialist_agents: int
+    supervisor_emergency_agents: int = 1
+    cross_skill_efficiency: float = 0.75
+
+    def resource_overrides(self) -> dict[str, int | float]:
+        return {
+            "regular_agents": self.regular_agents,
+            "specialist_agents": self.specialist_agents,
+            "supervisor_emergency_agents": self.supervisor_emergency_agents,
+            "cross_skill_efficiency": self.cross_skill_efficiency,
+        }
+
+
+def load_candidates(path: str | Path) -> tuple[ResourceCandidate, ...]:
+    """Load and validate a nonempty, uniquely named candidate YAML grid."""
+
+    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    if not isinstance(raw, dict):
+        raise ValueError("candidate grid root must be a mapping")
+    rows = raw.get("candidates")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("candidates must be a nonempty list")
+    if not all(isinstance(row, dict) for row in rows):
+        raise ValueError("each candidate must be a mapping")
+
+    candidates = tuple(ResourceCandidate(**row) for row in rows)
+    if len({item.name for item in candidates}) != len(candidates):
+        raise ValueError("candidate names must be unique")
+    for candidate in candidates:
+        if candidate.supervisor_emergency_agents < 0:
+            raise ValueError("supervisor_emergency_agents must be nonnegative")
+        SimulationConfig.default().with_overrides(
+            resources=candidate.resource_overrides()
+        )
+    return candidates
+
+
+def simulate_historical_periods(
+    config: SimulationConfig,
+    parameters: dict | str | Path,
+    *,
+    days: int,
+    seed: int,
+) -> pd.DataFrame:
+    """Simulate factual historical actions and their realized period outcomes."""
+
+    if days <= 0:
+        raise ValueError("days must be positive")
+
+    demand = CalibratedDemandProcess(
+        parameters,
+        hidden_confounding_strength=config.behavior.hidden_confounding_strength,
+        demand_shock_scale=config.demand_shock_scale,
+    )
+    environment = CallCenterEnvironment(config)
+    behavior = HistoricalBehaviorPolicy(config)
+    rows: list[dict[str, int | float | bool | str]] = []
+
+    for episode_id in range(days):
+        weekday = WEEKDAYS[episode_id % len(WEEKDAYS)]
+        environment_rng = np.random.default_rng(
+            np.random.SeedSequence([seed, episode_id, 0])
+        )
+        behavior_rng = np.random.default_rng(
+            np.random.SeedSequence([seed, episode_id, 1])
+        )
+        state = environment.reset(episode_id, weekday)
+        for _ in range(config.periods_per_day):
+            draw = demand.sample(state, environment_rng)
+            action, propensity, _ = behavior.act(
+                state, draw.manager_alarm, behavior_rng
+            )
+            result = environment.transition(state, action, draw)
+            rows.append(_factual_row(state, result, propensity))
+            state = result.next_state
+
+    return pd.DataFrame(rows)
+
+
+def _factual_row(
+    state: SystemState,
+    result: PeriodResult,
+    propensity: float,
+) -> dict[str, int | float | bool | str]:
+    return {
+        "episode_id": state.episode_id,
+        "weekday": state.weekday,
+        "period": state.period,
+        "demand_state": state.demand_state,
+        "queue_regular": state.queue_counts[0],
+        "queue_specialist": state.queue_counts[1],
+        "queue_callback_special": state.queue_counts[2],
+        "queue_priority": state.priority_count,
+        "max_waited_periods": state.max_waited_periods,
+        "action": result.action,
+        "action_level": result.action_level,
+        "propensity": propensity,
+        "arrival_regular": result.arrivals[0],
+        "arrival_specialist": result.arrivals[1],
+        "arrival_callback_special": result.arrivals[2],
+        "served_regular": result.served[0],
+        "served_specialist": result.served[1],
+        "served_callback_special": result.served[2],
+        "abandoned_regular": result.abandoned[0],
+        "abandoned_specialist": result.abandoned[1],
+        "abandoned_callback_special": result.abandoned[2],
+        "next_queue": result.next_state.total_queue,
+        "regular_agents": result.regular_agents,
+        "specialist_agents": result.specialist_agents,
+        "temporary_agents": result.temporary_agents,
+        "specialist_minutes_cross_served": result.specialist_minutes_cross_served,
+        "total_cost": result.total_cost,
+        "service_level": result.service_level,
+        "mean_wait_minutes": result.mean_wait_minutes,
+        "mean_wait_regular": result.mean_wait_by_class[0],
+        "mean_wait_specialist": result.mean_wait_by_class[1],
+        "mean_wait_callback_special": result.mean_wait_by_class[2],
+        "p95_wait_minutes": result.p95_wait_minutes,
+        "safety_violation": result.safety_violation,
+    }
