@@ -133,4 +133,5 @@ def _positive_wait_p90_minutes(real_calls: pd.DataFrame | None) -> float:
 
 def _p90_or_zero(values: pd.Series | np.ndarray) -> float:
     array = np.asarray(values, dtype=float)
+    array = array[np.isfinite(array)]
     return float(np.percentile(array, 90)) if len(array) else 0.0

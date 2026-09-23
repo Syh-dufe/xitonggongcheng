@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 
 from prescriptive_capacity_sim.validation import compare_real_and_simulated
 
@@ -129,3 +130,35 @@ def test_validation_reports_zero_overall_p90_wait_error_for_empty_waits():
         report["metric"].eq("overall_p90_wait_relative_error")
     ].iloc[0]
     assert row[["real", "simulated", "error"]].tolist() == [0.0, 0.0, 0.0]
+
+
+def test_validation_ignores_nonfinite_values_in_overall_p90_wait_error():
+    real_intervals = pd.DataFrame({
+        "service_class": ["regular", "specialist", "callback_special"],
+        "arrivals": [1, 1, 1], "abandoned": [0, 0, 0],
+        "mean_queue_seconds": [0.0, 0.0, 0.0],
+    })
+    simulated = pd.DataFrame({
+        "arrival_regular": [1, 1], "arrival_specialist": [1, 1],
+        "arrival_callback_special": [1, 1], "abandoned_regular": [0, 0],
+        "abandoned_specialist": [0, 0], "abandoned_callback_special": [0, 0],
+        "mean_wait_minutes": [0.0, 0.0],
+        "p95_wait_minutes": [np.nan, 3.0],
+    })
+    real_calls = pd.DataFrame({
+        "service_class": ["regular", "specialist"],
+        "service_seconds": [60.0, 60.0],
+        "queue_seconds": [np.nan, 120.0],
+    })
+    params = {"empirical": {"service_seconds": {
+        "regular": [60.0], "specialist": [60.0], "callback_special": [60.0],
+    }}}
+
+    report = compare_real_and_simulated(
+        real_intervals, simulated, real_calls, params
+    )
+
+    row = report.loc[
+        report["metric"].eq("overall_p90_wait_relative_error")
+    ].iloc[0]
+    assert row[["real", "simulated", "error"]].tolist() == [2.0, 3.0, 0.5]

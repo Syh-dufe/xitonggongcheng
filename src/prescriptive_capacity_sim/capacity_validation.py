@@ -112,6 +112,13 @@ def summarize_candidates(runs: pd.DataFrame) -> pd.DataFrame:
             + ", ".join(sorted(missing_columns))
         )
 
+    if set(RESOURCE_COLUMNS).issubset(runs.columns):
+        resource_variation = runs.groupby("candidate")[
+            list(RESOURCE_COLUMNS)
+        ].nunique(dropna=False)
+        if resource_variation.gt(1).any().any():
+            raise ValueError("resource values must be fixed per candidate")
+
     operational = runs.loc[runs["metric"].isin(SELECTION_WEIGHTS)]
     metric_averages = operational.groupby(
         ["candidate", "seed", "metric"], as_index=False, sort=False

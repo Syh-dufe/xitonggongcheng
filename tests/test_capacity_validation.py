@@ -162,3 +162,24 @@ def test_summary_averages_classes_before_predeclared_metric_weights():
     assert lower["specialist_agents"] == 5
     assert lower["supervisor_emergency_agents"] == 1
     assert lower["cross_skill_efficiency"] == 0.75
+
+
+def test_summary_rejects_resource_values_that_are_not_fixed_per_candidate():
+    rows = [
+        {
+            "candidate": "unstable",
+            "seed": 11,
+            "metric": metric,
+            "service_class": "overall",
+            "error": 0.1,
+            "regular_agents": 8,
+            "specialist_agents": 5,
+            "supervisor_emergency_agents": 1,
+            "cross_skill_efficiency": 0.75,
+        }
+        for metric in SELECTION_WEIGHTS
+    ]
+    rows[-1]["regular_agents"] = 9
+
+    with pytest.raises(ValueError, match="fixed"):
+        summarize_candidates(pd.DataFrame(rows))
