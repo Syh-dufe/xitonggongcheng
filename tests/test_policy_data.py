@@ -45,7 +45,7 @@ def _write_valid_log(tmp_path: Path) -> Path:
 
 def test_export_policy_data_keeps_only_factual_columns(tmp_path: Path) -> None:
     log = pd.DataFrame({
-        "episode_id": [0, 1, 0, 1],
+        "episode_id": [0, 1, 2, 3],
         "split": ["train", "train", "test", "test"],
         "period": [0, 0, 1, 1],
         "queue_regular": [1, 2, 3, 4],
