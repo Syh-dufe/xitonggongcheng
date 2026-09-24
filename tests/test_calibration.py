@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from prescriptive_capacity_sim.calibration import calibrate_calls, write_calibration
@@ -41,9 +42,19 @@ def test_calibration_records_empirical_distributions(tmp_path):
     assert paths.intervals.is_file()
     assert paths.quality.is_file()
     assert paths.manifest.is_file()
+    assert paths.validation_reference.is_file()
+    validation_reference = pd.read_csv(paths.validation_reference)
+    assert validation_reference.columns.tolist() == [
+        "service_class", "queue_seconds", "service_seconds",
+    ]
+    assert len(validation_reference) == len(result.validation_calls)
+    assert {"customer_id", "server", "raw_row"}.isdisjoint(
+        validation_reference.columns
+    )
+    manifest = json.loads(paths.manifest.read_text(encoding="utf-8"))
+    assert manifest["validation_reference_calls_sha256"]
     quality_report = json.loads(paths.quality.read_text(encoding="utf-8"))
-    assert "validation_reference" in quality_report
-    assert "service_seconds" in quality_report["validation_reference"]
+    assert "validation_reference" not in quality_report
 
 
 def test_analysis_artifacts_contain_no_identifiers(tmp_path):
@@ -53,6 +64,9 @@ def test_analysis_artifacts_contain_no_identifiers(tmp_path):
     header = paths.intervals.read_text(encoding="utf-8").splitlines()[0]
     assert "customer_id" not in header
     assert "server" not in header
+    reference_header = paths.validation_reference.read_text(encoding="utf-8").splitlines()[0]
+    assert "customer_id" not in reference_header
+    assert "server" not in reference_header
 
 
 def test_disruption_multipliers_preserve_overall_arrival_scale():

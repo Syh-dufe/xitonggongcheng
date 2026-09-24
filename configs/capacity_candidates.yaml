@@ -1,0 +1,18 @@
+# 半合成情景值，不是从历史日志恢复的真实排班。
+candidates:
+  - name: baseline_8_regular_5_specialist
+    regular_agents: 8
+    specialist_agents: 5
+    cross_skill_efficiency: 0.75
+  - name: lean_7_regular_4_specialist
+    regular_agents: 7
+    specialist_agents: 4
+    cross_skill_efficiency: 0.65
+  - name: flexible_8_regular_5_specialist
+    regular_agents: 8
+    specialist_agents: 5
+    cross_skill_efficiency: 0.90
+  - name: resilient_9_regular_6_specialist
+    regular_agents: 9
+    specialist_agents: 6
+    cross_skill_efficiency: 0.75

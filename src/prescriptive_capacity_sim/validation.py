@@ -63,12 +63,40 @@ def compare_real_and_simulated(
             real_wait = float(np.mean(real_wait_values) / 60.0) if len(real_wait_values) else 0.0
         else:
             real_wait = float(real["mean_queue_seconds"].mean() / 60.0) if len(real) else 0.0
-        class_wait_column = f"mean_wait_{service_class}"
-        sim_wait = float(simulated_log[
-            class_wait_column if class_wait_column in simulated_log else "mean_wait_minutes"
-        ].mean())
+        pooled_waits = _simulated_exit_waits(simulated_log, (service_class,))
+        if pooled_waits is not None:
+            sim_wait = _mean_or_zero(pooled_waits)
+        else:
+            class_wait_column = f"mean_wait_{service_class}"
+            sim_wait = float(simulated_log[
+                class_wait_column if class_wait_column in simulated_log else "mean_wait_minutes"
+            ].mean())
         _append(rows, "mean_wait_relative_error", service_class, real_wait, sim_wait,
                 relative=True)
+    real_p90_wait = _positive_wait_p90_minutes(real_calls)
+    pooled_waits = _simulated_exit_waits(simulated_log, SERVICE_CLASSES)
+    simulated_p90_wait = (
+        _positive_p90_or_zero(pooled_waits)
+        if pooled_waits is not None
+        else _p90_or_zero(simulated_log.get("p95_wait_minutes", pd.Series(dtype=float)))
+    )
+    _append(
+        rows,
+        "overall_p90_wait_relative_error",
+        "overall",
+        real_p90_wait,
+        simulated_p90_wait,
+        relative=True,
+    )
+    flow_residuals = _queue_flow_residuals(simulated_log)
+    flow_error = _mean_or_zero(np.abs(flow_residuals))
+    _append(
+        rows,
+        "queue_flow_conservation_error",
+        "overall",
+        0.0,
+        flow_error,
+    )
     return pd.DataFrame(rows)
 
 
@@ -108,3 +136,84 @@ def _append(
         "simulated": simulated,
         "error": float(error),
     })
+
+
+def _positive_wait_p90_minutes(real_calls: pd.DataFrame | None) -> float:
+    if real_calls is None or real_calls.empty or "queue_seconds" not in real_calls:
+        return 0.0
+    return _positive_p90_or_zero(real_calls["queue_seconds"]) / 60.0
+
+
+def _p90_or_zero(values: pd.Series | np.ndarray) -> float:
+    array = _finite_values(values)
+    return float(np.percentile(array, 90)) if len(array) else 0.0
+
+
+def _positive_p90_or_zero(values: pd.Series | np.ndarray) -> float:
+    array = _finite_values(values)
+    array = array[array > 0]
+    return float(np.percentile(array, 90)) if len(array) else 0.0
+
+
+def _mean_or_zero(values: pd.Series | np.ndarray) -> float:
+    array = _finite_values(values)
+    return float(np.mean(array)) if len(array) else 0.0
+
+
+def _finite_values(values: pd.Series | np.ndarray) -> np.ndarray:
+    array = np.asarray(values, dtype=float).reshape(-1)
+    return array[np.isfinite(array)]
+
+
+def _simulated_exit_waits(
+    simulated_log: pd.DataFrame,
+    service_classes: tuple[str, ...],
+) -> np.ndarray | None:
+    columns = [f"exit_wait_{service_class}" for service_class in service_classes]
+    if not all(column in simulated_log for column in columns):
+        return None
+    values: list[float] = []
+    for column in columns:
+        for exit_waits in simulated_log[column]:
+            if exit_waits is None:
+                continue
+            values.extend(np.asarray(exit_waits, dtype=float).reshape(-1))
+    return np.asarray(values, dtype=float)
+
+
+def _queue_flow_residuals(simulated_log: pd.DataFrame) -> np.ndarray:
+    """Return period queue-balance residuals from explicit or reconstructible fields."""
+
+    if "queue_flow_error" in simulated_log:
+        return _finite_values(simulated_log["queue_flow_error"])
+    required = {
+        "queue_regular", "queue_specialist", "queue_callback_special", "next_queue",
+        "arrival_regular", "arrival_specialist", "arrival_callback_special",
+        "served_regular", "served_specialist", "served_callback_special",
+        "abandoned_regular", "abandoned_specialist", "abandoned_callback_special",
+    }
+    if not required.issubset(simulated_log.columns):
+        return np.asarray([], dtype=float)
+    queue_before = (
+        simulated_log["queue_regular"]
+        + simulated_log["queue_specialist"]
+        + simulated_log["queue_callback_special"]
+    )
+    arrivals = (
+        simulated_log["arrival_regular"]
+        + simulated_log["arrival_specialist"]
+        + simulated_log["arrival_callback_special"]
+    )
+    served = (
+        simulated_log["served_regular"]
+        + simulated_log["served_specialist"]
+        + simulated_log["served_callback_special"]
+    )
+    abandoned = (
+        simulated_log["abandoned_regular"]
+        + simulated_log["abandoned_specialist"]
+        + simulated_log["abandoned_callback_special"]
+    )
+    return _finite_values(simulated_log["next_queue"] - (
+        queue_before + arrivals - served - abandoned
+    ))

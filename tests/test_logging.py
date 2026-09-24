@@ -35,6 +35,19 @@ def test_observed_log_has_one_action_and_no_potential_outcomes():
     assert "oracle_action" not in data.observed
 
 
+def test_observed_log_keeps_exact_exit_waits_by_service_class():
+    data = generate_dataset(SimulationConfig.default(), _parameters(), days=2, seed=9)
+
+    assert {
+        "exit_wait_regular",
+        "exit_wait_specialist",
+        "exit_wait_callback_special",
+    }.issubset(data.observed.columns)
+    assert all(isinstance(value, tuple) for value in data.observed["exit_wait_regular"])
+    assert "queue_flow_error" in data.observed.columns
+    assert data.observed["queue_flow_error"].eq(0.0).all()
+
+
 def test_oracle_contains_four_actions_and_correct_minimizer():
     data = generate_dataset(SimulationConfig.default(), _parameters(), days=2, seed=9)
     costs = [f"potential_cost_a{action}" for action in range(4)]

@@ -16,10 +16,18 @@ from pathlib import Path
 import pandas as pd
 
 from .calibration import calibrate_calls, write_calibration
+from .capacity_validation import (
+    RESOURCE_COLUMNS,
+    SELECTION_WEIGHTS,
+    load_candidates,
+    simulate_historical_periods,
+    summarize_candidates,
+)
 from .config import SimulationConfig
 from .evaluation import evaluate_policies
 from .ingest import load_raw_directory
 from .logging import generate_dataset
+from .policy_data import export_policy_data
 from .policies import default_policies
 from .validation import compare_real_and_simulated
 
@@ -33,6 +41,16 @@ def build_parser() -> argparse.ArgumentParser:
     calibrate.add_argument("--raw-dir", required=True, type=Path)
     calibrate.add_argument("--output", required=True, type=Path)
     calibrate.add_argument("--train-fraction", type=float, default=0.70)
+    validate_capacity = commands.add_parser("validate-capacity")
+    validate_capacity.add_argument("--config", required=True, type=Path)
+    validate_capacity.add_argument("--candidates", required=True, type=Path)
+    validate_capacity.add_argument("--days", required=True, type=int)
+    validate_capacity.add_argument("--seeds", required=True, type=int, nargs="+")
+    validate_capacity.add_argument("--output", required=True, type=Path)
+    export_policy = commands.add_parser("export-policy-data")
+    export_policy.add_argument("--observed-log", required=True, type=Path)
+    export_policy.add_argument("--queue-penalty", required=True, type=float)
+    export_policy.add_argument("--output", required=True, type=Path)
     for name in ("generate", "benchmark"):
         child = commands.add_parser(name)
         child.add_argument("--config", required=True, type=Path)
@@ -46,6 +64,15 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "calibrate":
         return _calibrate(args.raw_dir, args.output, args.train_fraction)
+    if args.command == "validate-capacity":
+        return _validate_capacity(
+            args.config, args.candidates, args.days, args.seeds, args.output
+        )
+    if args.command == "export-policy-data":
+        export_policy_data(
+            args.observed_log, args.output, queue_penalty=args.queue_penalty
+        )
+        return 0
     return _simulate(args.config, args.days, args.seed, args.output, args.command)
 
 
@@ -84,20 +111,7 @@ def _simulate(
     interval_path = config.calibration_path.with_name("calibration_intervals.csv")
     intervals = pd.read_csv(interval_path)
     validation_intervals = intervals.loc[intervals["split"].eq("validation")]
-    quality_path = config.calibration_path.with_name("data_quality_report.json")
-    quality_report = json.loads(quality_path.read_text(encoding="utf-8"))
-    reference = quality_report["validation_reference"]
-    reference_rows = []
-    for service_class in parameters["classes"]:
-        service_values = reference["service_seconds"][service_class]
-        queue_values = reference["queue_seconds"][service_class]
-        for index in range(max(len(service_values), len(queue_values))):
-            reference_rows.append({
-                "service_class": service_class,
-                "service_seconds": service_values[index % len(service_values)],
-                "queue_seconds": queue_values[index % len(queue_values)],
-            })
-    validation_calls = pd.DataFrame(reference_rows)
+    validation_calls = _load_validation_reference_calls(config.calibration_path)
     validation = compare_real_and_simulated(
         validation_intervals, data.observed, validation_calls, parameters
     )
@@ -114,6 +128,9 @@ def _simulate(
         "config_path": str(config_path.resolve()),
         "config": _serialize_config(config),
         "calibration_parameters_sha256": parameter_hash,
+        "validation_reference_calls_sha256": calibration_manifest.get(
+            "validation_reference_calls_sha256"
+        ),
         "raw_source_sha256": calibration_manifest.get("source_sha256", {}),
         "days": days,
         "seed": seed,
@@ -130,6 +147,157 @@ def _simulate(
         json.dumps(run_manifest, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return 0
+
+
+def _validate_capacity(
+    config_path: Path,
+    candidates_path: Path,
+    days: int,
+    seeds: list[int],
+    output: Path,
+) -> int:
+    """Run factual-only held-out diagnostics for resource candidates."""
+
+    if days <= 0:
+        raise ValueError("days must be positive")
+    if not seeds:
+        raise ValueError("at least one seed is required")
+    config, parameters, calibration_manifest = _load_calibration_artifacts(config_path)
+    candidates = load_candidates(candidates_path)
+    interval_path = config.calibration_path.with_name("calibration_intervals.csv")
+    intervals = pd.read_csv(interval_path)
+    validation_intervals = intervals.loc[intervals["split"].eq("validation")].copy()
+    if validation_intervals.empty:
+        raise ValueError("calibration intervals contain no validation split")
+    validation_calls = _load_validation_reference_calls(config.calibration_path)
+    weekdays, weekday_schedule_source, validation_dates = _validation_weekday_schedule(
+        validation_intervals, days
+    )
+
+    run_frames: list[pd.DataFrame] = []
+    for candidate in candidates:
+        candidate_config = config.with_overrides(
+            resources=candidate.resource_overrides()
+        )
+        for seed in seeds:
+            simulated = simulate_historical_periods(
+                candidate_config, parameters, days=days, seed=seed, weekdays=weekdays
+            )
+            comparison = compare_real_and_simulated(
+                validation_intervals, simulated, validation_calls, parameters
+            )
+            comparison.insert(0, "seed", seed)
+            comparison.insert(0, "candidate", candidate.name)
+            for column, value in candidate.resource_overrides().items():
+                comparison[column] = value
+            run_frames.append(comparison)
+
+    runs = pd.concat(run_frames, ignore_index=True)
+    runs = runs[
+        ["candidate", "seed", "metric", "service_class", "real", "simulated", "error",
+         *RESOURCE_COLUMNS]
+    ]
+    summary = summarize_candidates(runs)
+    parameter_hash = _json_hash(parameters)
+    output.mkdir(parents=True, exist_ok=True)
+    runs.to_csv(output / "candidate_validation_runs.csv", index=False)
+    summary.to_csv(output / "candidate_validation_summary.csv", index=False)
+    report_manifest = {
+        "command": "validate-capacity",
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "status": "factual_only_semisynthetic_validation",
+        "config_path": str(config_path.resolve()),
+        "config": _serialize_config(config),
+        "calibration_parameters_sha256": parameter_hash,
+        "validation_reference_calls_sha256": calibration_manifest.get(
+            "validation_reference_calls_sha256"
+        ),
+        "raw_source_sha256": calibration_manifest.get("source_sha256", {}),
+        "candidate_yaml_path": str(candidates_path.resolve()),
+        "candidate_yaml_sha256": _file_hash(candidates_path),
+        "candidates": [
+            {"name": candidate.name, **candidate.resource_overrides()}
+            for candidate in candidates
+        ],
+        "days": days,
+        "seeds": list(seeds),
+        "validation_dates_available": validation_dates,
+        "weekday_schedule": list(weekdays),
+        "weekday_schedule_source": weekday_schedule_source,
+        "selection_weights": SELECTION_WEIGHTS,
+        "counterfactual_data_used": False,
+        "runs_rows": len(runs),
+        "summary_rows": len(summary),
+        "python": sys.version,
+        "platform": platform.platform(),
+        "package_version": version("prescriptive-capacity-sim"),
+        "git_revision": _git_revision(),
+    }
+    (output / "candidate_validation_manifest.json").write_text(
+        json.dumps(report_manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return 0
+
+
+def _load_calibration_artifacts(
+    config_path: Path,
+) -> tuple[SimulationConfig, dict, dict]:
+    config = SimulationConfig.from_yaml(config_path)
+    config.validate_for_simulation()
+    parameters = json.loads(config.calibration_path.read_text(encoding="utf-8"))
+    manifest_path = config.calibration_path.with_name("calibration_manifest.json")
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"calibration manifest not found: {manifest_path}")
+    calibration_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if calibration_manifest.get("parameters_sha256") != _json_hash(parameters):
+        raise ValueError("calibration parameter hash does not match its manifest")
+    return config, parameters, calibration_manifest
+
+
+def _load_validation_reference_calls(calibration_path: Path) -> pd.DataFrame:
+    """Load the exact, deidentified held-out calls used for diagnostics."""
+
+    path = calibration_path.with_name("validation_reference_calls.csv")
+    if not path.is_file():
+        raise FileNotFoundError(f"validation reference calls not found: {path}")
+    frame = pd.read_csv(path)
+    expected = ["service_class", "queue_seconds", "service_seconds"]
+    if frame.columns.tolist() != expected:
+        raise ValueError(
+            "validation reference calls must contain only: " + ", ".join(expected)
+        )
+    return frame
+
+
+def _validation_weekday_schedule(
+    validation_intervals: pd.DataFrame,
+    days: int,
+) -> tuple[tuple[str, ...], str, list[str]]:
+    """Return validation-date weekdays, cycling only when episode counts differ."""
+
+    required = {"call_date", "weekday"}
+    if not required.issubset(validation_intervals.columns):
+        raise ValueError("validation intervals must include call_date and weekday")
+    dates = validation_intervals[["call_date", "weekday"]].drop_duplicates()
+    dates = dates.sort_values("call_date", kind="stable")
+    date_values = dates["call_date"].astype(str).tolist()
+    weekday_values = tuple(dates["weekday"].astype(str).str.lower())
+    if not weekday_values:
+        raise ValueError("validation intervals contain no validation dates")
+    if days == len(weekday_values):
+        return weekday_values, "validation_dates_exact", date_values
+    if days < len(weekday_values):
+        return weekday_values[:days], "validation_dates_truncated", date_values
+    schedule = tuple(weekday_values[index % len(weekday_values)] for index in range(days))
+    return schedule, "validation_dates_cycled", date_values
+
+
+def _file_hash(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _json_hash(value: dict) -> str:

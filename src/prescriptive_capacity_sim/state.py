@@ -98,5 +98,6 @@ class PeriodResult:
     service_level: float
     mean_wait_minutes: float
     mean_wait_by_class: tuple[float, float, float]
+    exit_wait_minutes_by_class: tuple[tuple[float, ...], tuple[float, ...], tuple[float, ...]]
     p95_wait_minutes: float
     safety_violation: bool
