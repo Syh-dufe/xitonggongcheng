@@ -45,20 +45,20 @@ def _write_valid_log(tmp_path: Path) -> Path:
 
 def test_export_policy_data_keeps_only_factual_columns(tmp_path: Path) -> None:
     log = pd.DataFrame({
-        "episode_id": [0, 1, 2, 3],
-        "split": ["train", "train", "test", "test"],
-        "period": [0, 0, 1, 1],
-        "queue_regular": [1, 2, 3, 4],
-        "queue_specialist": [0, 1, 1, 0],
-        "queue_callback_special": [0, 0, 0, 1],
-        "queue_priority": [0, 1, 0, 1],
-        "max_waited_periods": [0, 1, 1, 2],
-        "demand_state": ["normal", "high", "normal", "severe"],
-        "action": [0, 1, 2, 3],
-        "total_cost": [10.0, 11.0, 12.0, 13.0],
-        "next_queue": [2, 3, 4, 5],
-        "potential_cost_a0": [1.0] * 4,
-        "oracle_action": [0] * 4,
+        "episode_id": list(range(8)),
+        "split": ["train"] * 4 + ["test"] * 4,
+        "period": list(range(8)),
+        "queue_regular": list(range(1, 9)),
+        "queue_specialist": [0, 1, 1, 0] * 2,
+        "queue_callback_special": [0, 0, 0, 1] * 2,
+        "queue_priority": [0, 1, 0, 1] * 2,
+        "max_waited_periods": [0, 1, 1, 2] * 2,
+        "demand_state": ["normal", "high", "normal", "severe"] * 2,
+        "action": [0, 1, 2, 3] * 2,
+        "total_cost": [10.0, 11.0, 12.0, 13.0] * 2,
+        "next_queue": [2, 3, 4, 5] * 2,
+        "potential_cost_a0": [1.0] * 8,
+        "oracle_action": [0] * 8,
     })
     source = tmp_path / "observed_log.csv"
     log.to_csv(source, index=False)
@@ -79,7 +79,7 @@ def test_export_policy_data_keeps_only_factual_columns(tmp_path: Path) -> None:
         "action",
         "cost",
     ]
-    assert train["cost"].tolist() == [14.0, 17.0]
+    assert train["cost"].tolist() == [14.0, 17.0, 20.0, 23.0]
 
 
 def test_export_policy_data_rejects_overlapping_episode_ids(tmp_path: Path) -> None:
