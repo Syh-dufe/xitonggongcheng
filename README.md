@@ -90,6 +90,38 @@ uv run python -m prescriptive_capacity_sim.cli generate `
 
 原始记录含客户编号和坐席标识，已通过 `.gitignore` 排除。处理后的表（含逐通话留出期参考表）不会保存 `customer_id`、`server` 或原始行号。训练接口不读取Oracle文件；任何使用Oracle调参的结果都不能作为确认性实验。
 
+## 训练因果规范性策略树
+
+`r/policytree_train.R` 复用开源的 `grf` 与 `policytree` R 包：前者拟合四行动因果森林并计算双重稳健收益分数，后者在固定深度下生成可解释的策略树。它对应观察性策略学习和多行动离线策略学习的已发表方法；实现细节见 `r/README.md`。
+
+先从**事实**历史日志导出训练/测试数据。该步骤保留原有按 `episode_id` 的日期切分，成本目标固定为 `total_cost + 2.0 × next_queue`，并将 `counterfactual_data_used: false` 写入清单：
+
+```powershell
+uv run python -m prescriptive_capacity_sim.cli export-policy-data `
+  --observed-log outputs/historical_factual_730d/observed_log.csv `
+  --queue-penalty 2.0 `
+  --output outputs/policy_data
+```
+
+安装 R 包后，运行深度为 3 的因果规范性树：
+
+```powershell
+$env:POLICYTREE_R_LIB = "$env:USERPROFILE/R/win-library/4.6"
+& 'C:\Program Files\R\R-4.6.1\bin\Rscript.exe' r/policytree_train.R `
+  outputs/policy_data outputs/policytree_causal 3
+```
+
+输出包含留出日期每个决策时点的 `recommendations.csv`、可解释的 `policy_tree.txt` 和重叠性诊断。该脚本会拒绝含 Oracle 文件的输入目录，且不读取潜在结果文件。
+
+若 Windows R 无法读取包含中文字符的工作目录，可临时将当前项目映射为英文盘符后运行：
+
+```powershell
+subst P: (Get-Location).Path
+& 'C:\Program Files\R\R-4.6.1\bin\Rscript.exe' r/policytree_train.R `
+  P:/outputs/policy_data P:/outputs/policytree_causal 3
+subst P: /d
+```
+
 ## 测试
 
 ```powershell
