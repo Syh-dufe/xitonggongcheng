@@ -3,10 +3,22 @@ from pathlib import Path
 
 import pandas as pd
 
-from prescriptive_capacity_sim.cli import _validation_weekday_schedule, main
+from prescriptive_capacity_sim.cli import _validation_weekday_schedule, build_parser, main
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
+
+
+def test_cli_parses_export_policy_data():
+    args = build_parser().parse_args([
+        "export-policy-data",
+        "--observed-log", "outputs/historical_factual_730d/observed_log.csv",
+        "--queue-penalty", "2.0",
+        "--output", "outputs/policy_data",
+    ])
+
+    assert args.command == "export-policy-data"
+    assert args.queue_penalty == 2.0
 
 
 def test_calibrate_cli_writes_exact_deidentified_validation_reference(tmp_path):

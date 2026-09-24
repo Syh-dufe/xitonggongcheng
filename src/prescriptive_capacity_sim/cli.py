@@ -27,6 +27,7 @@ from .config import SimulationConfig
 from .evaluation import evaluate_policies
 from .ingest import load_raw_directory
 from .logging import generate_dataset
+from .policy_data import export_policy_data
 from .policies import default_policies
 from .validation import compare_real_and_simulated
 
@@ -46,6 +47,10 @@ def build_parser() -> argparse.ArgumentParser:
     validate_capacity.add_argument("--days", required=True, type=int)
     validate_capacity.add_argument("--seeds", required=True, type=int, nargs="+")
     validate_capacity.add_argument("--output", required=True, type=Path)
+    export_policy = commands.add_parser("export-policy-data")
+    export_policy.add_argument("--observed-log", required=True, type=Path)
+    export_policy.add_argument("--queue-penalty", required=True, type=float)
+    export_policy.add_argument("--output", required=True, type=Path)
     for name in ("generate", "benchmark"):
         child = commands.add_parser(name)
         child.add_argument("--config", required=True, type=Path)
@@ -63,6 +68,11 @@ def main(argv: list[str] | None = None) -> int:
         return _validate_capacity(
             args.config, args.candidates, args.days, args.seeds, args.output
         )
+    if args.command == "export-policy-data":
+        export_policy_data(
+            args.observed_log, args.output, queue_penalty=args.queue_penalty
+        )
+        return 0
     return _simulate(args.config, args.days, args.seed, args.output, args.command)
 
 
